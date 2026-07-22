@@ -1,0 +1,7 @@
+__pycache__/
+*.py[cod]
+.env
+.venv/
+venv/
+upbit_auto_trader.jsonl
+.upbit_bot_stop

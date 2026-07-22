@@ -29,6 +29,10 @@ class Settings:
     max_order_krw: Decimal
     min_order_krw: Decimal
     allow_full_balance_autotrade: bool
+    alerts_enabled: bool
+    telegram_bot_token: str
+    telegram_chat_id: str
+    alert_webhook_url: str
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -40,6 +44,10 @@ class Settings:
             max_order_krw=_env_decimal("MAX_ORDER_KRW", "10000"),
             min_order_krw=_env_decimal("MIN_ORDER_KRW", "5000"),
             allow_full_balance_autotrade=_env_bool("AUTO_ALLOW_FULL_BALANCE", False),
+            alerts_enabled=_env_bool("ALERTS_ENABLED", True),
+            telegram_bot_token=os.getenv("TELEGRAM_BOT_TOKEN", "").strip(),
+            telegram_chat_id=os.getenv("TELEGRAM_CHAT_ID", "").strip(),
+            alert_webhook_url=os.getenv("ALERT_WEBHOOK_URL", "").strip(),
         )
 
     def require_keys(self) -> None:

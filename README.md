@@ -26,6 +26,9 @@ $env:AUTO_ALLOW_FULL_BALANCE="false"
 $env:AI_NEWS_FEEDS=""
 $env:OPENAI_API_KEY=""
 $env:OPENAI_MODEL="gpt-5"
+$env:ALERTS_ENABLED="true"
+$env:TELEGRAM_BOT_TOKEN=""
+$env:TELEGRAM_CHAT_ID=""
 ```
 
 Upbit Open API key permissions:
@@ -113,6 +116,18 @@ Run without external news scoring:
 python -m upbit_bot run-auto --no-info
 ```
 
+Send a test alert:
+
+```powershell
+python -m upbit_bot test-alert --message "alert test"
+```
+
+24/7 server operation:
+
+- Use `deploy/upbit-auto-trader.service` for systemd.
+- Store production secrets in `/etc/upbit-auto-trader.env`.
+- See `docs/OPERATIONS.md` for setup, restart, logs, and alert testing.
+
 Stop an autonomous loop from another terminal:
 
 ```powershell
@@ -151,6 +166,13 @@ Information scoring:
 - `--info-weight` controls how strongly information changes market momentum scores.
 - `--info-sell-threshold` controls when negative information triggers a sell or blocks a candidate.
 - `--global-risk-block-threshold` blocks new buys when broad market news risk is too negative.
+
+Alerts:
+
+- Telegram alerts use `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID`.
+- Generic JSON webhook alerts use `ALERT_WEBHOOK_URL`.
+- The bot alerts on start, stop, errors, buy/sell actions, and periodic heartbeats.
+- `--alert-heartbeat-cycles 0` disables heartbeat alerts.
 
 ## Notes
 

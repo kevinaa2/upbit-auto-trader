@@ -1,0 +1,19 @@
+[Unit]
+Description=Upbit Auto Trader
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/upbit-auto-trader
+EnvironmentFile=/etc/upbit-auto-trader.env
+ExecStart=/opt/upbit-auto-trader/deploy/run-auto.sh
+Restart=always
+RestartSec=30
+KillSignal=SIGINT
+TimeoutStopSec=30
+User=upbitbot
+Group=upbitbot
+
+[Install]
+WantedBy=multi-user.target

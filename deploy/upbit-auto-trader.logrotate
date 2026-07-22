@@ -1,0 +1,8 @@
+/opt/upbit-auto-trader/upbit_auto_trader.jsonl {
+    daily
+    rotate 14
+    missingok
+    notifempty
+    copytruncate
+    compress
+}

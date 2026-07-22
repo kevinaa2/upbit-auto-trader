@@ -9,6 +9,7 @@ from typing import Any
 
 from .auto_trader import AutoConfig, AutoTrader
 from .config import Settings
+from .notifier import Notification, Notifier
 from .trader import OrderPlan, Trader
 from .upbit_client import UpbitApiError, UpbitResponse
 
@@ -64,11 +65,15 @@ def build_parser() -> argparse.ArgumentParser:
     auto.add_argument("--include-warnings", action="store_true")
     auto.add_argument("--allow-full-balance", action="store_true")
     auto.add_argument("--once", action="store_true", help="Run one cycle and exit.")
+    auto.add_argument("--alert-heartbeat-cycles", type=int, default=30)
     auto.add_argument("--stop-file", default=".upbit_bot_stop")
     auto.add_argument("--log-file", default="upbit_auto_trader.jsonl")
 
     stop = subparsers.add_parser("stop-auto", help="Stop a running autonomous loop.")
     stop.add_argument("--stop-file", default=".upbit_bot_stop")
+
+    alert = subparsers.add_parser("test-alert", help="Send a test alert.")
+    alert.add_argument("--message", default="Alert test from upbit-auto-trader.")
 
     return parser
 
@@ -128,6 +133,7 @@ def _dispatch(args: argparse.Namespace, trader: Trader) -> UpbitResponse | Order
             yes=args.yes,
             allow_full_balance=args.allow_full_balance,
             once=args.once,
+            alert_heartbeat_cycles=args.alert_heartbeat_cycles,
             stop_file=Path(args.stop_file),
             log_file=Path(args.log_file),
         )
@@ -137,6 +143,23 @@ def _dispatch(args: argparse.Namespace, trader: Trader) -> UpbitResponse | Order
         stop_file = Path(args.stop_file)
         stop_file.write_text("stop\n", encoding="utf-8")
         return UpbitResponse({"message": "stop signal written", "stop_file": str(stop_file)}, 200, None)
+    if args.command == "test-alert":
+        notifier = Notifier(trader.settings)
+        if not notifier.enabled():
+            raise RuntimeError(
+                "No alert channel configured. Set TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID, or ALERT_WEBHOOK_URL."
+            )
+        errors = notifier.send(
+            Notification(
+                event="test_alert",
+                title="Alert test",
+                level="info",
+                details={"message": args.message},
+            )
+        )
+        if errors:
+            raise RuntimeError("; ".join(errors))
+        return UpbitResponse({"message": "test alert sent"}, 200, None)
     raise ValueError(f"unknown command: {args.command}")
 
 

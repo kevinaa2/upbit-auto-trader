@@ -11,6 +11,7 @@ from typing import Any
 
 from .config import Settings
 from .intelligence import InfoSignal, IntelligenceEngine
+from .notifier import Notification, Notifier
 from .trader import OrderPlan, Trader
 from .upbit_client import UpbitApiError, UpbitResponse
 
@@ -37,6 +38,7 @@ class AutoConfig:
     yes: bool = False
     allow_full_balance: bool = False
     once: bool = False
+    alert_heartbeat_cycles: int = 30
     stop_file: Path = Path(".upbit_bot_stop")
     log_file: Path = Path("upbit_auto_trader.jsonl")
 
@@ -72,32 +74,45 @@ class AutoTrader:
         settings: Settings,
         trader: Trader | None = None,
         intelligence: IntelligenceEngine | None = None,
+        notifier: Notifier | None = None,
     ) -> None:
         self.settings = settings
         self.trader = trader or Trader(settings)
         self.intelligence = intelligence
+        self.notifier = notifier or Notifier(settings)
         self._running = True
+        self._active_log_file = Path("upbit_auto_trader.jsonl")
 
     def run(self, config: AutoConfig) -> None:
         self._validate_config(config)
+        self._active_log_file = config.log_file
         self._clear_stop_file(config.stop_file)
         self._install_signal_handlers()
         self._log(config, "started", {"live": config.live, "once": config.once})
+        self._notify("started", "Auto trader started", "info", {"live": config.live, "once": config.once})
+        cycle_count = 0
 
         while self._running:
             if config.stop_file.exists():
                 self._log(config, "stopped", {"reason": "stop_file"})
+                self._notify("stopped", "Auto trader stopped", "info", {"reason": "stop_file"})
                 return
 
             try:
                 summary = self.run_once(config)
                 self._log(config, "cycle", summary)
+                cycle_count += 1
+                self._notify_cycle(config, cycle_count, summary)
             except (RuntimeError, ValueError, UpbitApiError) as exc:
                 self._log(config, "error", {"error": str(exc)})
+                self._notify("error", "Auto trader error", "error", {"error": str(exc)})
 
             if config.once:
+                self._notify("stopped", "Auto trader finished one cycle", "info", {"reason": "once"})
                 return
             self._sleep(config.interval_seconds, config.stop_file)
+        self._log(config, "stopped", {"reason": "signal"})
+        self._notify("stopped", "Auto trader stopped", "info", {"reason": "signal"})
 
     def run_once(self, config: AutoConfig) -> dict[str, Any]:
         market_items = self.trader.markets(config.quote, config.include_warnings).data
@@ -315,6 +330,8 @@ class AutoTrader:
             raise ValueError("--interval-seconds must be at least 5")
         if config.info_article_limit < 1:
             raise ValueError("--info-article-limit must be at least 1")
+        if config.alert_heartbeat_cycles < 0:
+            raise ValueError("--alert-heartbeat-cycles must be 0 or greater")
 
     def _sleep(self, seconds: int, stop_file: Path) -> None:
         end = time.time() + seconds
@@ -343,6 +360,49 @@ class AutoTrader:
         }
         with config.log_file.open("a", encoding="utf-8") as file:
             file.write(json.dumps(record, ensure_ascii=False, separators=(",", ":")) + "\n")
+
+    def _notify_cycle(self, config: AutoConfig, cycle_count: int, summary: dict[str, Any]) -> None:
+        actions = summary.get("actions", [])
+        trade_actions = [action for action in actions if action.get("type") in {"buy", "sell"}]
+        if trade_actions:
+            self._notify(
+                "trade_action",
+                "Trade action executed" if config.live else "Trade action planned",
+                "warning" if config.live else "info",
+                {
+                    "actions": trade_actions,
+                    "candidate": summary.get("candidate"),
+                    "cash": summary.get("cash"),
+                },
+            )
+            return
+        if config.alert_heartbeat_cycles and cycle_count % config.alert_heartbeat_cycles == 0:
+            self._notify(
+                "heartbeat",
+                "Auto trader heartbeat",
+                "info",
+                {
+                    "cycle": cycle_count,
+                    "candidate": summary.get("candidate"),
+                    "positions": summary.get("positions"),
+                    "cash": summary.get("cash"),
+                    "info": summary.get("info"),
+                },
+            )
+
+    def _notify(self, event: str, title: str, level: str, details: dict[str, Any]) -> None:
+        errors = self.notifier.send(
+            Notification(event=event, title=title, level=level, details=details)
+        )
+        if errors:
+            record = {
+                "ts": datetime.now(timezone.utc).isoformat(),
+                "event": "alert_error",
+                "alert_event": event,
+                "errors": errors,
+            }
+            with self._active_log_file.open("a", encoding="utf-8") as file:
+                file.write(json.dumps(record, ensure_ascii=False, separators=(",", ":")) + "\n")
 
     @staticmethod
     def _action(order_type: str, market: str, reason: str, result: UpbitResponse | OrderPlan) -> dict[str, Any]:

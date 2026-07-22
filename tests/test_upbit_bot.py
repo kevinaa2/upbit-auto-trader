@@ -6,6 +6,7 @@ from decimal import Decimal
 from upbit_bot.auto_trader import AutoConfig, AutoTrader
 from upbit_bot.config import Settings
 from upbit_bot.intelligence import InfoSignal, KeywordInfoAnalyzer, NewsItem
+from upbit_bot.notifier import Notification, Notifier
 from upbit_bot.trader import OrderPlan, Trader
 from upbit_bot.upbit_client import UpbitClient
 
@@ -42,6 +43,10 @@ class TraderTests(unittest.TestCase):
             max_order_krw=Decimal("10000"),
             min_order_krw=Decimal("5000"),
             allow_full_balance_autotrade=False,
+            alerts_enabled=False,
+            telegram_bot_token="",
+            telegram_chat_id="",
+            alert_webhook_url="",
         )
 
     def test_market_buy_dry_run(self) -> None:
@@ -86,6 +91,10 @@ class AutoTraderTests(unittest.TestCase):
             max_order_krw=max_order_krw,
             min_order_krw=Decimal("5000"),
             allow_full_balance_autotrade=allow_full_balance,
+            alerts_enabled=False,
+            telegram_bot_token="",
+            telegram_chat_id="",
+            alert_webhook_url="",
         )
 
     def test_select_candidate_uses_positive_volume_adjusted_momentum(self) -> None:
@@ -197,6 +206,27 @@ class IntelligenceTests(unittest.TestCase):
         self.assertIn("KRW-BTC", signal.market_scores)
         self.assertLess(signal.market_scores["KRW-BTC"], Decimal("0"))
         self.assertIn("KRW-BTC", signal.blocked_markets)
+
+
+class NotifierTests(unittest.TestCase):
+    def test_disabled_notifier_returns_no_errors(self) -> None:
+        settings = Settings(
+            access_key="",
+            secret_key="",
+            base_url="https://api.upbit.com",
+            live_trading=False,
+            max_order_krw=Decimal("10000"),
+            min_order_krw=Decimal("5000"),
+            allow_full_balance_autotrade=False,
+            alerts_enabled=False,
+            telegram_bot_token="",
+            telegram_chat_id="",
+            alert_webhook_url="",
+        )
+        errors = Notifier(settings).send(
+            Notification(event="test", title="Test", details={"ok": True})
+        )
+        self.assertEqual(errors, [])
 
 
 if __name__ == "__main__":

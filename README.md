@@ -23,6 +23,9 @@ $env:UPBIT_SECRET_KEY="your_secret_key"
 $env:UPBIT_LIVE_TRADING="true"
 $env:MAX_ORDER_KRW="10000"
 $env:AUTO_ALLOW_FULL_BALANCE="false"
+$env:AI_NEWS_FEEDS=""
+$env:OPENAI_API_KEY=""
+$env:OPENAI_MODEL="gpt-5"
 ```
 
 Upbit Open API key permissions:
@@ -97,6 +100,19 @@ $env:MAX_ORDER_KRW="0"
 python -m upbit_bot run-auto --live --yes --allow-full-balance --cash-usage-percent 100
 ```
 
+Run autonomous loop with OpenAI news analysis:
+
+```powershell
+$env:OPENAI_API_KEY="your_openai_api_key"
+python -m upbit_bot run-auto --use-openai-info --cash-usage-percent 50
+```
+
+Run without external news scoring:
+
+```powershell
+python -m upbit_bot run-auto --no-info
+```
+
 Stop an autonomous loop from another terminal:
 
 ```powershell
@@ -118,9 +134,23 @@ Auto trader defaults:
 - Scans all KRW markets.
 - Excludes warning markets unless `--include-warnings` is passed.
 - Buys the strongest candidate by 24h volume-adjusted positive momentum.
+- Collects crypto news from RSS feeds and adjusts candidate scores with external information.
+- Can optionally call the OpenAI Responses API when `--use-openai-info` and `OPENAI_API_KEY` are set.
 - Sells on `--stop-loss-rate`, `--take-profit-rate`, or rotation to a stronger candidate.
+- Sells when strong negative external information is detected for the held market.
+- Blocks new buys when global crypto news risk is too negative.
 - Writes JSONL logs to `upbit_auto_trader.jsonl`.
 - Requires `AUTO_ALLOW_FULL_BALANCE=true` plus `--allow-full-balance` when `--cash-usage-percent` is 99 or higher.
+
+Information scoring:
+
+- Default RSS sources are Google News searches for crypto, Bitcoin, Ethereum, Korean crypto terms, and Upbit-related notices.
+- Override sources with comma-separated RSS URLs in `AI_NEWS_FEEDS`.
+- Keyword analysis is always available and does not require an OpenAI key.
+- OpenAI analysis is optional and only scores the collected articles; the strategy engine still makes the final buy/sell decision.
+- `--info-weight` controls how strongly information changes market momentum scores.
+- `--info-sell-threshold` controls when negative information triggers a sell or blocks a candidate.
+- `--global-risk-block-threshold` blocks new buys when broad market news risk is too negative.
 
 ## Notes
 

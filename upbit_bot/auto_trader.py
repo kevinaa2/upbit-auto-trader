@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from .config import Settings
+from .intelligence import InfoSignal, IntelligenceEngine
 from .trader import OrderPlan, Trader
 from .upbit_client import UpbitApiError, UpbitResponse
 
@@ -25,6 +26,12 @@ class AutoConfig:
     take_profit_rate: Decimal = Decimal("0.03")
     rotation_margin_rate: Decimal = Decimal("0.01")
     fee_buffer_rate: Decimal = Decimal("0.001")
+    use_info: bool = True
+    use_openai_info: bool = False
+    info_weight: Decimal = Decimal("0.25")
+    info_sell_threshold: Decimal = Decimal("-0.70")
+    global_risk_block_threshold: Decimal = Decimal("-0.80")
+    info_article_limit: int = 40
     include_warnings: bool = False
     live: bool = False
     yes: bool = False
@@ -38,9 +45,12 @@ class AutoConfig:
 class Candidate:
     market: str
     score: Decimal
+    market_score: Decimal
+    info_score: Decimal
     change_rate: Decimal
     volume_24h: Decimal
     trade_price: Decimal
+    reasons: list[str]
 
 
 @dataclass(frozen=True)
@@ -52,13 +62,20 @@ class Position:
     current_price: Decimal
     value_krw: Decimal
     momentum_score: Decimal
+    info_score: Decimal
     pnl_rate: Decimal | None
 
 
 class AutoTrader:
-    def __init__(self, settings: Settings, trader: Trader | None = None) -> None:
+    def __init__(
+        self,
+        settings: Settings,
+        trader: Trader | None = None,
+        intelligence: IntelligenceEngine | None = None,
+    ) -> None:
         self.settings = settings
         self.trader = trader or Trader(settings)
+        self.intelligence = intelligence
         self._running = True
 
     def run(self, config: AutoConfig) -> None:
@@ -83,13 +100,15 @@ class AutoTrader:
             self._sleep(config.interval_seconds, config.stop_file)
 
     def run_once(self, config: AutoConfig) -> dict[str, Any]:
-        markets = [item["market"] for item in self.trader.markets(config.quote, config.include_warnings).data]
+        market_items = self.trader.markets(config.quote, config.include_warnings).data
+        markets = [item["market"] for item in market_items]
         tickers = self._load_tickers(markets)
         ticker_by_market = {item["market"]: item for item in tickers}
-        candidate = self.select_candidate(tickers, config)
+        info_signal = self._load_info_signal(market_items, config)
+        candidate = self.select_candidate(tickers, config, info_signal)
 
         balances = self.trader.balances().data
-        positions = self.positions(balances, ticker_by_market, config.quote)
+        positions = self.positions(balances, ticker_by_market, config.quote, info_signal)
         cash = self.cash_balance(balances, config.quote)
 
         actions: list[dict[str, Any]] = []
@@ -106,7 +125,8 @@ class AutoTrader:
                 )
                 actions.append(self._action("sell", position.market, sell_reason, result))
 
-        if not positions and candidate is not None and cash >= self.settings.min_order_krw:
+        risk_off = info_signal.global_risk_score <= config.global_risk_block_threshold
+        if not positions and candidate is not None and cash >= self.settings.min_order_krw and not risk_off:
             buy_amount = self.buy_amount(cash, config)
             if buy_amount >= self.settings.min_order_krw:
                 result = self.trader.market_buy(
@@ -121,31 +141,49 @@ class AutoTrader:
 
         return {
             "candidate": self._candidate_dict(candidate),
+            "info": self._info_dict(info_signal),
             "cash": str(cash),
             "positions": [self._position_dict(position) for position in positions],
             "actions": actions,
         }
 
-    def select_candidate(self, tickers: list[dict[str, Any]], config: AutoConfig) -> Candidate | None:
+    def select_candidate(
+        self,
+        tickers: list[dict[str, Any]],
+        config: AutoConfig,
+        info_signal: InfoSignal | None = None,
+    ) -> Candidate | None:
+        info_signal = info_signal or InfoSignal()
         candidates: list[Candidate] = []
         for item in tickers:
+            market = str(item["market"])
             change_rate = self._decimal(item.get("signed_change_rate", "0"))
             volume_24h = self._decimal(item.get("acc_trade_price_24h", "0"))
             trade_price = self._decimal(item.get("trade_price", "0"))
+            info_score = info_signal.market_score(market)
             if change_rate < config.min_change_rate:
                 continue
             if volume_24h < config.min_24h_volume:
                 continue
             if trade_price <= 0:
                 continue
-            score = change_rate * volume_24h
+            if market in info_signal.blocked_markets:
+                continue
+            if info_score <= config.info_sell_threshold:
+                continue
+            market_score = change_rate * volume_24h
+            info_multiplier = max(Decimal("0"), Decimal("1") + (info_score * config.info_weight))
+            score = market_score * info_multiplier
             candidates.append(
                 Candidate(
-                    market=str(item["market"]),
+                    market=market,
                     score=score,
+                    market_score=market_score,
+                    info_score=info_score,
                     change_rate=change_rate,
                     volume_24h=volume_24h,
                     trade_price=trade_price,
+                    reasons=info_signal.market_reasons.get(market, [])[:5],
                 )
             )
         if not candidates:
@@ -157,7 +195,9 @@ class AutoTrader:
         balances: list[dict[str, Any]],
         ticker_by_market: dict[str, dict[str, Any]],
         quote: str,
+        info_signal: InfoSignal | None = None,
     ) -> list[Position]:
+        info_signal = info_signal or InfoSignal()
         positions: list[Position] = []
         quote = quote.upper()
         for item in balances:
@@ -177,6 +217,7 @@ class AutoTrader:
             volume_24h = self._decimal(ticker.get("acc_trade_price_24h", "0"))
             value_krw = balance * current_price
             momentum_score = max(change_rate, Decimal("0")) * volume_24h
+            info_score = info_signal.market_score(market)
             pnl_rate = None
             if avg_buy_price > 0:
                 pnl_rate = (current_price / avg_buy_price) - Decimal("1")
@@ -189,6 +230,7 @@ class AutoTrader:
                     current_price=current_price,
                     value_krw=value_krw,
                     momentum_score=momentum_score,
+                    info_score=info_score,
                     pnl_rate=pnl_rate,
                 )
             )
@@ -202,6 +244,8 @@ class AutoTrader:
     ) -> str | None:
         if position.value_krw < self.settings.min_order_krw:
             return None
+        if position.info_score <= config.info_sell_threshold:
+            return "negative_external_info"
         if position.pnl_rate is not None and position.pnl_rate <= config.stop_loss_rate:
             return "stop_loss"
         if position.pnl_rate is not None and position.pnl_rate >= config.take_profit_rate:
@@ -210,7 +254,11 @@ class AutoTrader:
             return None
         if candidate.market == position.market:
             return None
-        if candidate.score > position.momentum_score * (Decimal("1") + config.rotation_margin_rate):
+        position_score = position.momentum_score * max(
+            Decimal("0"),
+            Decimal("1") + (position.info_score * config.info_weight),
+        )
+        if candidate.score > position_score * (Decimal("1") + config.rotation_margin_rate):
             return "rotate_to_stronger_candidate"
         return None
 
@@ -240,6 +288,15 @@ class AutoTrader:
             time.sleep(0.12)
         return tickers
 
+    def _load_info_signal(self, market_items: list[dict[str, Any]], config: AutoConfig) -> InfoSignal:
+        if not config.use_info:
+            return InfoSignal(summary="External information disabled.")
+        engine = self.intelligence or IntelligenceEngine(use_openai=config.use_openai_info)
+        try:
+            return engine.evaluate(market_items, limit=config.info_article_limit)
+        except Exception as exc:
+            return InfoSignal(errors=[f"information analysis failed: {exc}"])
+
     def _validate_config(self, config: AutoConfig) -> None:
         if config.live:
             if not config.yes:
@@ -256,6 +313,8 @@ class AutoTrader:
                 )
         if config.interval_seconds < 5:
             raise ValueError("--interval-seconds must be at least 5")
+        if config.info_article_limit < 1:
+            raise ValueError("--info-article-limit must be at least 1")
 
     def _sleep(self, seconds: int, stop_file: Path) -> None:
         end = time.time() + seconds
@@ -298,15 +357,28 @@ class AutoTrader:
         return action
 
     @staticmethod
-    def _candidate_dict(candidate: Candidate | None) -> dict[str, str] | None:
+    def _candidate_dict(candidate: Candidate | None) -> dict[str, Any] | None:
         if candidate is None:
             return None
         return {
             "market": candidate.market,
             "score": str(candidate.score),
+            "market_score": str(candidate.market_score),
+            "info_score": str(candidate.info_score),
             "change_rate": str(candidate.change_rate),
             "volume_24h": str(candidate.volume_24h),
             "trade_price": str(candidate.trade_price),
+            "reasons": candidate.reasons,
+        }
+
+    @staticmethod
+    def _info_dict(signal: InfoSignal) -> dict[str, Any]:
+        return {
+            "article_count": signal.article_count,
+            "global_risk_score": str(signal.global_risk_score),
+            "blocked_markets": sorted(signal.blocked_markets),
+            "summary": signal.summary,
+            "errors": signal.errors,
         }
 
     @staticmethod
@@ -319,6 +391,7 @@ class AutoTrader:
             "current_price": str(position.current_price),
             "value_krw": str(position.value_krw),
             "momentum_score": str(position.momentum_score),
+            "info_score": str(position.info_score),
             "pnl_rate": str(position.pnl_rate) if position.pnl_rate is not None else None,
         }
 

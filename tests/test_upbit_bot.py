@@ -5,6 +5,7 @@ from decimal import Decimal
 
 from upbit_bot.auto_trader import AutoConfig, AutoTrader
 from upbit_bot.config import Settings
+from upbit_bot.intelligence import InfoSignal, KeywordInfoAnalyzer, NewsItem
 from upbit_bot.trader import OrderPlan, Trader
 from upbit_bot.upbit_client import UpbitClient
 
@@ -114,6 +115,38 @@ class AutoTraderTests(unittest.TestCase):
         self.assertIsNotNone(candidate)
         self.assertEqual(candidate.market, "KRW-BBB")
 
+    def test_select_candidate_skips_negative_information(self) -> None:
+        auto = AutoTrader(self.settings())
+        config = AutoConfig(
+            cash_usage_percent=Decimal("50"),
+            min_change_rate=Decimal("0.01"),
+            min_24h_volume=Decimal("1000"),
+        )
+        signal = InfoSignal(
+            market_scores={"KRW-AAA": Decimal("-0.9"), "KRW-BBB": Decimal("0")},
+            blocked_markets={"KRW-AAA"},
+        )
+        candidate = auto.select_candidate(
+            [
+                {
+                    "market": "KRW-AAA",
+                    "signed_change_rate": "0.05",
+                    "acc_trade_price_24h": "100000",
+                    "trade_price": "10",
+                },
+                {
+                    "market": "KRW-BBB",
+                    "signed_change_rate": "0.015",
+                    "acc_trade_price_24h": "100000",
+                    "trade_price": "10",
+                },
+            ],
+            config,
+            signal,
+        )
+        self.assertIsNotNone(candidate)
+        self.assertEqual(candidate.market, "KRW-BBB")
+
     def test_full_balance_requires_double_unlock(self) -> None:
         auto = AutoTrader(self.settings(allow_full_balance=False))
         with self.assertRaises(RuntimeError):
@@ -137,6 +170,33 @@ class AutoTraderTests(unittest.TestCase):
             ),
         )
         self.assertEqual(amount, Decimal("10000"))
+
+
+class IntelligenceTests(unittest.TestCase):
+    def test_keyword_analyzer_scores_market_news(self) -> None:
+        analyzer = KeywordInfoAnalyzer()
+        signal = analyzer.analyze(
+            [
+                {
+                    "market": "KRW-BTC",
+                    "korean_name": "비트코인",
+                    "english_name": "Bitcoin",
+                }
+            ],
+            [
+                NewsItem(
+                    title="Bitcoin ETF approval boosts adoption",
+                    link="https://example.test/positive",
+                ),
+                NewsItem(
+                    title="Bitcoin exchange hack investigation warning",
+                    link="https://example.test/negative",
+                ),
+            ],
+        )
+        self.assertIn("KRW-BTC", signal.market_scores)
+        self.assertLess(signal.market_scores["KRW-BTC"], Decimal("0"))
+        self.assertIn("KRW-BTC", signal.blocked_markets)
 
 
 if __name__ == "__main__":

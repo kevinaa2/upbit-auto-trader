@@ -55,6 +55,12 @@ def build_parser() -> argparse.ArgumentParser:
     auto.add_argument("--take-profit-rate", default="0.03")
     auto.add_argument("--rotation-margin-rate", default="0.01")
     auto.add_argument("--fee-buffer-rate", default="0.001")
+    auto.add_argument("--no-info", action="store_true", help="Disable external news/RSS information scoring.")
+    auto.add_argument("--use-openai-info", action="store_true", help="Use OpenAI API to analyze collected news.")
+    auto.add_argument("--info-weight", default="0.25")
+    auto.add_argument("--info-sell-threshold", default="-0.70")
+    auto.add_argument("--global-risk-block-threshold", default="-0.80")
+    auto.add_argument("--info-article-limit", type=int, default=40)
     auto.add_argument("--include-warnings", action="store_true")
     auto.add_argument("--allow-full-balance", action="store_true")
     auto.add_argument("--once", action="store_true", help="Run one cycle and exit.")
@@ -111,6 +117,12 @@ def _dispatch(args: argparse.Namespace, trader: Trader) -> UpbitResponse | Order
             take_profit_rate=Decimal(args.take_profit_rate),
             rotation_margin_rate=Decimal(args.rotation_margin_rate),
             fee_buffer_rate=Decimal(args.fee_buffer_rate),
+            use_info=not args.no_info,
+            use_openai_info=args.use_openai_info,
+            info_weight=Decimal(args.info_weight),
+            info_sell_threshold=Decimal(args.info_sell_threshold),
+            global_risk_block_threshold=Decimal(args.global_risk_block_threshold),
+            info_article_limit=args.info_article_limit,
             include_warnings=args.include_warnings,
             live=args.live,
             yes=args.yes,

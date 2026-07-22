@@ -105,6 +105,14 @@ python -m upbit_bot stop-auto
 
 You can also stop the loop with `Ctrl+C`.
 
+Sync local changes to GitHub:
+
+```powershell
+.\scripts\sync.ps1 "Update trading logic"
+```
+
+The sync script runs tests, commits changed files, and pushes to the connected GitHub repository.
+
 Auto trader defaults:
 
 - Scans all KRW markets.

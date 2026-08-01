@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import signal
 import time
 from dataclasses import dataclass
@@ -24,7 +25,13 @@ class AutoConfig:
     min_change_rate: Decimal = Decimal("0.005")
     min_24h_volume: Decimal = Decimal("1000000000")
     stop_loss_rate: Decimal = Decimal("-0.02")
-    take_profit_rate: Decimal = Decimal("0.03")
+    take_profit_rate: Decimal = Decimal("0")
+    trailing_start_rate: Decimal = Decimal("0.04")
+    trailing_stop_rate_1: Decimal = Decimal("0.03")
+    trailing_stop_rate_2: Decimal = Decimal("0.04")
+    trailing_stop_rate_3: Decimal = Decimal("0.06")
+    trailing_tier_2_rate: Decimal = Decimal("0.08")
+    trailing_tier_3_rate: Decimal = Decimal("0.15")
     rotation_margin_rate: Decimal = Decimal("0.01")
     fee_buffer_rate: Decimal = Decimal("0.001")
     use_info: bool = True
@@ -41,6 +48,7 @@ class AutoConfig:
     alert_heartbeat_cycles: int = 30
     stop_file: Path = Path(".upbit_bot_stop")
     log_file: Path = Path("upbit_auto_trader.jsonl")
+    state_file: Path = Path(".upbit_auto_state.json")
 
 
 @dataclass(frozen=True)
@@ -65,6 +73,8 @@ class Position:
     value_krw: Decimal
     momentum_score: Decimal
     info_score: Decimal
+    peak_price: Decimal
+    trailing_stop_price: Decimal | None
     pnl_rate: Decimal | None
 
 
@@ -82,10 +92,12 @@ class AutoTrader:
         self.notifier = notifier or Notifier(settings)
         self._running = True
         self._active_log_file = Path("upbit_auto_trader.jsonl")
+        self._position_state: dict[str, dict[str, str]] = {}
 
     def run(self, config: AutoConfig) -> None:
         self._validate_config(config)
         self._active_log_file = config.log_file
+        self._position_state = self._load_state(config.state_file)
         self._clear_stop_file(config.stop_file)
         self._install_signal_handlers()
         self._log(config, "started", {"live": config.live, "once": config.once})
@@ -124,6 +136,8 @@ class AutoTrader:
 
         balances = self.trader.balances().data
         positions = self.positions(balances, ticker_by_market, config.quote, info_signal)
+        positions = self.apply_position_state(positions, config)
+        self._save_state(config.state_file)
         cash = self.cash_balance(balances, config.quote)
 
         actions: list[dict[str, Any]] = []
@@ -246,10 +260,54 @@ class AutoTrader:
                     value_krw=value_krw,
                     momentum_score=momentum_score,
                     info_score=info_score,
+                    peak_price=current_price,
+                    trailing_stop_price=None,
                     pnl_rate=pnl_rate,
                 )
             )
         return positions
+
+    def apply_position_state(self, positions: list[Position], config: AutoConfig) -> list[Position]:
+        active_markets = {position.market for position in positions}
+        for market in list(self._position_state):
+            if market not in active_markets:
+                del self._position_state[market]
+
+        enriched: list[Position] = []
+        for position in positions:
+            state = self._position_state.get(position.market, {})
+            stored_avg = self._decimal(state.get("avg_buy_price", "0"))
+            stored_peak = self._decimal(state.get("peak_price", "0"))
+            if stored_avg != position.avg_buy_price:
+                stored_peak = Decimal("0")
+
+            peak_price = max(stored_peak, position.current_price, position.avg_buy_price)
+            trailing_stop_price = None
+            if position.pnl_rate is not None and position.pnl_rate >= config.trailing_start_rate:
+                stop_rate = self.trailing_stop_rate(position.pnl_rate, config)
+                trailing_stop_price = peak_price * (Decimal("1") - stop_rate)
+
+            self._position_state[position.market] = {
+                "avg_buy_price": str(position.avg_buy_price),
+                "peak_price": str(peak_price),
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+            }
+            enriched.append(
+                Position(
+                    market=position.market,
+                    currency=position.currency,
+                    balance=position.balance,
+                    avg_buy_price=position.avg_buy_price,
+                    current_price=position.current_price,
+                    value_krw=position.value_krw,
+                    momentum_score=position.momentum_score,
+                    info_score=position.info_score,
+                    peak_price=peak_price,
+                    trailing_stop_price=trailing_stop_price,
+                    pnl_rate=position.pnl_rate,
+                )
+            )
+        return enriched
 
     def sell_reason(
         self,
@@ -263,7 +321,13 @@ class AutoTrader:
             return "negative_external_info"
         if position.pnl_rate is not None and position.pnl_rate <= config.stop_loss_rate:
             return "stop_loss"
-        if position.pnl_rate is not None and position.pnl_rate >= config.take_profit_rate:
+        if self.trailing_stop_hit(position, config):
+            return "trailing_take_profit"
+        if (
+            config.take_profit_rate > 0
+            and position.pnl_rate is not None
+            and position.pnl_rate >= config.take_profit_rate
+        ):
             return "take_profit"
         if candidate is None:
             return None
@@ -276,6 +340,20 @@ class AutoTrader:
         if candidate.score > position_score * (Decimal("1") + config.rotation_margin_rate):
             return "rotate_to_stronger_candidate"
         return None
+
+    def trailing_stop_hit(self, position: Position, config: AutoConfig) -> bool:
+        if position.pnl_rate is None or position.pnl_rate < config.trailing_start_rate:
+            return False
+        if position.trailing_stop_price is None:
+            return False
+        return position.current_price <= position.trailing_stop_price
+
+    def trailing_stop_rate(self, pnl_rate: Decimal, config: AutoConfig) -> Decimal:
+        if pnl_rate >= config.trailing_tier_3_rate:
+            return config.trailing_stop_rate_3
+        if pnl_rate >= config.trailing_tier_2_rate:
+            return config.trailing_stop_rate_2
+        return config.trailing_stop_rate_1
 
     def buy_amount(self, cash: Decimal, config: AutoConfig) -> Decimal:
         usable = cash * (config.cash_usage_percent / Decimal("100"))
@@ -332,6 +410,19 @@ class AutoTrader:
             raise ValueError("--info-article-limit must be at least 1")
         if config.alert_heartbeat_cycles < 0:
             raise ValueError("--alert-heartbeat-cycles must be 0 or greater")
+        if config.trailing_start_rate < 0:
+            raise ValueError("--trailing-start-rate must be 0 or greater")
+        for name, value in {
+            "--trailing-stop-rate-1": config.trailing_stop_rate_1,
+            "--trailing-stop-rate-2": config.trailing_stop_rate_2,
+            "--trailing-stop-rate-3": config.trailing_stop_rate_3,
+        }.items():
+            if value <= 0 or value >= 1:
+                raise ValueError(f"{name} must be greater than 0 and less than 1")
+        if config.trailing_tier_2_rate < config.trailing_start_rate:
+            raise ValueError("--trailing-tier-2-rate must be >= --trailing-start-rate")
+        if config.trailing_tier_3_rate < config.trailing_tier_2_rate:
+            raise ValueError("--trailing-tier-3-rate must be >= --trailing-tier-2-rate")
 
     def _sleep(self, seconds: int, stop_file: Path) -> None:
         end = time.time() + seconds
@@ -360,6 +451,35 @@ class AutoTrader:
         }
         with config.log_file.open("a", encoding="utf-8") as file:
             file.write(json.dumps(record, ensure_ascii=False, separators=(",", ":")) + "\n")
+
+    def _load_state(self, state_file: Path) -> dict[str, dict[str, str]]:
+        if not state_file.exists():
+            return {}
+        try:
+            with state_file.open("r", encoding="utf-8") as file:
+                data = json.load(file)
+        except (OSError, json.JSONDecodeError):
+            return {}
+        if not isinstance(data, dict):
+            return {}
+        positions = data.get("positions", {})
+        if not isinstance(positions, dict):
+            return {}
+        return {
+            str(market): values
+            for market, values in positions.items()
+            if isinstance(values, dict)
+        }
+
+    def _save_state(self, state_file: Path) -> None:
+        payload = {
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+            "positions": self._position_state,
+        }
+        temp_file = state_file.with_suffix(state_file.suffix + ".tmp")
+        with temp_file.open("w", encoding="utf-8") as file:
+            json.dump(payload, file, ensure_ascii=False, separators=(",", ":"))
+        os.replace(temp_file, state_file)
 
     def _notify_cycle(self, config: AutoConfig, cycle_count: int, summary: dict[str, Any]) -> None:
         actions = summary.get("actions", [])
@@ -452,6 +572,10 @@ class AutoTrader:
             "value_krw": str(position.value_krw),
             "momentum_score": str(position.momentum_score),
             "info_score": str(position.info_score),
+            "peak_price": str(position.peak_price),
+            "trailing_stop_price": (
+                str(position.trailing_stop_price) if position.trailing_stop_price is not None else None
+            ),
             "pnl_rate": str(position.pnl_rate) if position.pnl_rate is not None else None,
         }
 

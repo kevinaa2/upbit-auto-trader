@@ -53,7 +53,13 @@ def build_parser() -> argparse.ArgumentParser:
     auto.add_argument("--min-change-rate", default="0.005")
     auto.add_argument("--min-24h-volume", default="1000000000")
     auto.add_argument("--stop-loss-rate", default="-0.02")
-    auto.add_argument("--take-profit-rate", default="0.03")
+    auto.add_argument("--take-profit-rate", default="0")
+    auto.add_argument("--trailing-start-rate", default="0.04")
+    auto.add_argument("--trailing-stop-rate-1", default="0.03")
+    auto.add_argument("--trailing-stop-rate-2", default="0.04")
+    auto.add_argument("--trailing-stop-rate-3", default="0.06")
+    auto.add_argument("--trailing-tier-2-rate", default="0.08")
+    auto.add_argument("--trailing-tier-3-rate", default="0.15")
     auto.add_argument("--rotation-margin-rate", default="0.01")
     auto.add_argument("--fee-buffer-rate", default="0.001")
     auto.add_argument("--no-info", action="store_true", help="Disable external news/RSS information scoring.")
@@ -68,6 +74,7 @@ def build_parser() -> argparse.ArgumentParser:
     auto.add_argument("--alert-heartbeat-cycles", type=int, default=30)
     auto.add_argument("--stop-file", default=".upbit_bot_stop")
     auto.add_argument("--log-file", default="upbit_auto_trader.jsonl")
+    auto.add_argument("--state-file", default=".upbit_auto_state.json")
 
     stop = subparsers.add_parser("stop-auto", help="Stop a running autonomous loop.")
     stop.add_argument("--stop-file", default=".upbit_bot_stop")
@@ -120,6 +127,12 @@ def _dispatch(args: argparse.Namespace, trader: Trader) -> UpbitResponse | Order
             min_24h_volume=Decimal(args.min_24h_volume),
             stop_loss_rate=Decimal(args.stop_loss_rate),
             take_profit_rate=Decimal(args.take_profit_rate),
+            trailing_start_rate=Decimal(args.trailing_start_rate),
+            trailing_stop_rate_1=Decimal(args.trailing_stop_rate_1),
+            trailing_stop_rate_2=Decimal(args.trailing_stop_rate_2),
+            trailing_stop_rate_3=Decimal(args.trailing_stop_rate_3),
+            trailing_tier_2_rate=Decimal(args.trailing_tier_2_rate),
+            trailing_tier_3_rate=Decimal(args.trailing_tier_3_rate),
             rotation_margin_rate=Decimal(args.rotation_margin_rate),
             fee_buffer_rate=Decimal(args.fee_buffer_rate),
             use_info=not args.no_info,
@@ -136,6 +149,7 @@ def _dispatch(args: argparse.Namespace, trader: Trader) -> UpbitResponse | Order
             alert_heartbeat_cycles=args.alert_heartbeat_cycles,
             stop_file=Path(args.stop_file),
             log_file=Path(args.log_file),
+            state_file=Path(args.state_file),
         )
         AutoTrader(trader.settings, trader).run(config)
         return UpbitResponse({"message": "auto trader stopped", "log_file": str(config.log_file)}, 200, None)

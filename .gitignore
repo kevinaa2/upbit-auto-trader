@@ -5,3 +5,5 @@ __pycache__/
 venv/
 upbit_auto_trader.jsonl
 .upbit_bot_stop
+.upbit_auto_state.json
+.upbit_auto_state.json.tmp

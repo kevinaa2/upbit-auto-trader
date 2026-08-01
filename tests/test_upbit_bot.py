@@ -3,7 +3,7 @@ from __future__ import annotations
 import unittest
 from decimal import Decimal
 
-from upbit_bot.auto_trader import AutoConfig, AutoTrader
+from upbit_bot.auto_trader import AutoConfig, AutoTrader, Position
 from upbit_bot.config import Settings
 from upbit_bot.intelligence import InfoSignal, KeywordInfoAnalyzer, NewsItem
 from upbit_bot.notifier import Notification, Notifier
@@ -179,6 +179,63 @@ class AutoTraderTests(unittest.TestCase):
             ),
         )
         self.assertEqual(amount, Decimal("10000"))
+
+    def test_default_take_profit_does_not_sell_before_trailing_stop(self) -> None:
+        auto = AutoTrader(self.settings())
+        position = Position(
+            market="KRW-BTC",
+            currency="BTC",
+            balance=Decimal("1"),
+            avg_buy_price=Decimal("100"),
+            current_price=Decimal("105"),
+            value_krw=Decimal("105000"),
+            momentum_score=Decimal("1000"),
+            info_score=Decimal("0"),
+            peak_price=Decimal("105"),
+            trailing_stop_price=Decimal("101.85"),
+            pnl_rate=Decimal("0.05"),
+        )
+        self.assertIsNone(auto.sell_reason(position, None, AutoConfig()))
+
+    def test_trailing_take_profit_sells_after_pullback_from_peak(self) -> None:
+        auto = AutoTrader(self.settings())
+        position = Position(
+            market="KRW-BTC",
+            currency="BTC",
+            balance=Decimal("1"),
+            avg_buy_price=Decimal("100"),
+            current_price=Decimal("113"),
+            value_krw=Decimal("113000"),
+            momentum_score=Decimal("1000"),
+            info_score=Decimal("0"),
+            peak_price=Decimal("120"),
+            trailing_stop_price=Decimal("114"),
+            pnl_rate=Decimal("0.13"),
+        )
+        self.assertEqual(
+            auto.sell_reason(position, None, AutoConfig()),
+            "trailing_take_profit",
+        )
+
+    def test_apply_position_state_keeps_highest_observed_price(self) -> None:
+        auto = AutoTrader(self.settings())
+        auto._position_state = {"KRW-BTC": {"avg_buy_price": "100", "peak_price": "120"}}
+        position = Position(
+            market="KRW-BTC",
+            currency="BTC",
+            balance=Decimal("1"),
+            avg_buy_price=Decimal("100"),
+            current_price=Decimal("113"),
+            value_krw=Decimal("113000"),
+            momentum_score=Decimal("1000"),
+            info_score=Decimal("0"),
+            peak_price=Decimal("113"),
+            trailing_stop_price=None,
+            pnl_rate=Decimal("0.13"),
+        )
+        updated = auto.apply_position_state([position], AutoConfig())[0]
+        self.assertEqual(updated.peak_price, Decimal("120"))
+        self.assertEqual(updated.trailing_stop_price, Decimal("115.20"))
 
 
 class IntelligenceTests(unittest.TestCase):

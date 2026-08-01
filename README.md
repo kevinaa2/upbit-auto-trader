@@ -151,11 +151,27 @@ Auto trader defaults:
 - Buys the strongest candidate by 24h volume-adjusted positive momentum.
 - Collects crypto news from RSS feeds and adjusts candidate scores with external information.
 - Can optionally call the OpenAI Responses API when `--use-openai-info` and `OPENAI_API_KEY` are set.
-- Sells on `--stop-loss-rate`, `--take-profit-rate`, or rotation to a stronger candidate.
+- Sells on `--stop-loss-rate`, trailing take-profit, optional `--take-profit-rate`, or rotation to a stronger candidate.
 - Sells when strong negative external information is detected for the held market.
 - Blocks new buys when global crypto news risk is too negative.
 - Writes JSONL logs to `upbit_auto_trader.jsonl`.
+- Stores position peak-price state in `.upbit_auto_state.json`.
 - Requires `AUTO_ALLOW_FULL_BALANCE=true` plus `--allow-full-balance` when `--cash-usage-percent` is 99 or higher.
+
+Trailing take-profit defaults:
+
+- Fixed take-profit is disabled by default with `--take-profit-rate 0`.
+- Trailing starts after `--trailing-start-rate 0.04`, meaning roughly +4% profit.
+- From +4% to +8%, sell if price falls 3% from the observed peak.
+- From +8% to +15%, sell if price falls 4% from the observed peak.
+- Above +15%, sell if price falls 6% from the observed peak.
+- The peak is persisted in `.upbit_auto_state.json`, so restarting the bot does not forget the latest observed high.
+
+Example:
+
+```powershell
+python -m upbit_bot run-auto --trailing-start-rate 0.04 --trailing-stop-rate-1 0.03 --trailing-stop-rate-2 0.04 --trailing-stop-rate-3 0.06
+```
 
 Information scoring:
 

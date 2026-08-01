@@ -31,6 +31,23 @@ $env:TELEGRAM_BOT_TOKEN=""
 $env:TELEGRAM_CHAT_ID=""
 ```
 
+PyCharm local setup:
+
+1. Open this project folder in PyCharm.
+2. Copy `.env.local.example` to `.env`.
+3. Fill only your local keys in `.env`.
+4. Create a Python run configuration:
+   - Script path: `run_bot.py`
+   - Parameters: `ticker --market KRW-BTC`
+   - Working directory: project root
+5. For a dry-run auto cycle, use parameters:
+
+```text
+run-auto --once --cash-usage-percent 50
+```
+
+The app automatically loads `.env` from the project root. The `.env` file is ignored by Git.
+
 Upbit Open API key permissions:
 
 - Required for trading: order permission.

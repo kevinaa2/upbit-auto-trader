@@ -3,6 +3,31 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 from decimal import Decimal
+from pathlib import Path
+
+
+def load_dotenv(path: str | Path = ".env", override: bool = False) -> bool:
+    env_path = Path(path)
+    if not env_path.exists():
+        return False
+    for raw_line in env_path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        name, value = line.split("=", 1)
+        name = name.strip()
+        value = _strip_env_value(value.strip())
+        if not name:
+            continue
+        if override or name not in os.environ:
+            os.environ[name] = value
+    return True
+
+
+def _strip_env_value(value: str) -> str:
+    if len(value) >= 2 and value[0] == value[-1] and value[0] in {"'", '"'}:
+        return value[1:-1]
+    return value
 
 
 def _env_bool(name: str, default: bool = False) -> bool:
@@ -36,6 +61,7 @@ class Settings:
 
     @classmethod
     def from_env(cls) -> "Settings":
+        load_dotenv()
         return cls(
             access_key=os.getenv("UPBIT_ACCESS_KEY", "").strip(),
             secret_key=os.getenv("UPBIT_SECRET_KEY", "").strip(),

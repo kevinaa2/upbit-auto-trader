@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import os
 import unittest
 from decimal import Decimal
+from pathlib import Path
+from tempfile import TemporaryDirectory
 
 from upbit_bot.auto_trader import AutoConfig, AutoTrader, Position
-from upbit_bot.config import Settings
+from upbit_bot.config import Settings, load_dotenv
 from upbit_bot.intelligence import InfoSignal, KeywordInfoAnalyzer, NewsItem
 from upbit_bot.notifier import Notification, Notifier
 from upbit_bot.trader import OrderPlan, Trader
@@ -31,6 +34,29 @@ class UpbitClientTests(unittest.TestCase):
             UpbitClient._query_string({"market": "KRW-BTC", "side": "bid"}),
             "market=KRW-BTC&side=bid",
         )
+
+
+class ConfigTests(unittest.TestCase):
+    def test_load_dotenv_reads_values_without_overriding_existing_env(self) -> None:
+        with TemporaryDirectory() as directory:
+            env_file = Path(directory) / ".env"
+            env_file.write_text(
+                "UPBIT_ACCESS_KEY=from_file\n"
+                "QUOTED_VALUE=\"hello world\"\n",
+                encoding="utf-8",
+            )
+            original = os.environ.get("UPBIT_ACCESS_KEY")
+            os.environ["UPBIT_ACCESS_KEY"] = "existing"
+            try:
+                self.assertTrue(load_dotenv(env_file))
+                self.assertEqual(os.environ["UPBIT_ACCESS_KEY"], "existing")
+                self.assertEqual(os.environ["QUOTED_VALUE"], "hello world")
+            finally:
+                if original is None:
+                    os.environ.pop("UPBIT_ACCESS_KEY", None)
+                else:
+                    os.environ["UPBIT_ACCESS_KEY"] = original
+                os.environ.pop("QUOTED_VALUE", None)
 
 
 class TraderTests(unittest.TestCase):

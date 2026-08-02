@@ -1,0 +1,17 @@
+[Unit]
+Description=Upbit Auto Trader Status Web
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/upbit-auto-trader
+EnvironmentFile=/etc/upbit-auto-trader.env
+ExecStart=/opt/upbit-auto-trader/deploy/run-status-web.sh
+Restart=always
+RestartSec=30
+User=upbitbot
+Group=upbitbot
+
+[Install]
+WantedBy=multi-user.target

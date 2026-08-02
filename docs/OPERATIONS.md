@@ -21,7 +21,7 @@ sudo git clone https://github.com/kevinaa2/upbit-auto-trader.git /opt/upbit-auto
 cd /opt/upbit-auto-trader
 sudo bash deploy/install-systemd.sh /opt/upbit-auto-trader
 sudo nano /etc/upbit-auto-trader.env
-sudo systemctl start upbit-auto-trader
+sudo systemctl start upbit-auto-trader upbit-status-web
 ```
 
 Check status:
@@ -31,10 +31,18 @@ sudo systemctl status upbit-auto-trader
 journalctl -u upbit-auto-trader -f
 ```
 
+Check status web:
+
+```bash
+sudo systemctl status upbit-status-web
+journalctl -u upbit-status-web -f
+```
+
 Stop:
 
 ```bash
 sudo systemctl stop upbit-auto-trader
+sudo systemctl stop upbit-status-web
 ```
 
 Restart after code updates:
@@ -43,6 +51,7 @@ Restart after code updates:
 cd /opt/upbit-auto-trader
 sudo git pull
 sudo systemctl restart upbit-auto-trader
+sudo systemctl restart upbit-status-web
 ```
 
 ## Telegram Alerts
@@ -60,6 +69,30 @@ Test locally:
 ```bash
 python3 -m upbit_bot test-alert --message "server alert test"
 ```
+
+## Status Web
+
+Start a local read-only dashboard:
+
+```bash
+python3 -m upbit_bot status-web --host 127.0.0.1 --port 8080
+```
+
+Open `http://127.0.0.1:8080`.
+
+When installed with `deploy/install-systemd.sh`, start it with:
+
+```bash
+sudo systemctl start upbit-status-web
+```
+
+For a VPS, keep it private by default and access it through SSH port forwarding:
+
+```bash
+ssh -L 8080:127.0.0.1:8080 user@server-ip
+```
+
+Then open `http://127.0.0.1:8080` on your PC. Use `--host 0.0.0.0` only when the server firewall or reverse proxy restricts access.
 
 ## Runtime Arguments
 

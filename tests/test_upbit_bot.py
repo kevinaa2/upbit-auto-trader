@@ -10,6 +10,7 @@ from upbit_bot.auto_trader import AutoConfig, AutoTrader, Position
 from upbit_bot.config import Settings, load_dotenv
 from upbit_bot.intelligence import InfoSignal, KeywordInfoAnalyzer, NewsCollector, NewsItem
 from upbit_bot.notifier import Notification, Notifier
+from upbit_bot.status_web import build_status, read_recent_events
 from upbit_bot.trader import OrderPlan, Trader
 from upbit_bot.upbit_client import UpbitClient
 
@@ -339,6 +340,65 @@ class NotifierTests(unittest.TestCase):
             Notification(event="test", title="Test", details={"ok": True})
         )
         self.assertEqual(errors, [])
+
+
+class StatusWebTests(unittest.TestCase):
+    def test_status_is_ok_after_recent_cycle(self) -> None:
+        with TemporaryDirectory() as directory:
+            log_file = Path(directory) / "bot.jsonl"
+            state_file = Path(directory) / "state.json"
+            stop_file = Path(directory) / "stop"
+            log_file.write_text(
+                _json_line(
+                    {
+                        "ts": "2999-01-01T00:00:00+00:00",
+                        "event": "cycle",
+                        "cash": "10000",
+                        "candidate": {"market": "KRW-BTC"},
+                        "positions": [],
+                        "actions": [],
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            status = build_status(log_file, state_file, stop_file)
+
+            self.assertEqual(status["level"], "ok")
+            self.assertEqual(status["last_cycle"]["candidate"]["market"], "KRW-BTC")
+
+    def test_status_reports_newer_error(self) -> None:
+        with TemporaryDirectory() as directory:
+            log_file = Path(directory) / "bot.jsonl"
+            state_file = Path(directory) / "state.json"
+            stop_file = Path(directory) / "stop"
+            log_file.write_text(
+                _json_line({"ts": "2999-01-01T00:00:00+00:00", "event": "cycle"})
+                + _json_line({"ts": "2999-01-01T00:01:00+00:00", "event": "error", "error": "boom"}),
+                encoding="utf-8",
+            )
+
+            status = build_status(log_file, state_file, stop_file)
+
+            self.assertEqual(status["level"], "error")
+            self.assertEqual(status["message"], "boom")
+
+    def test_read_recent_events_skips_bad_lines(self) -> None:
+        with TemporaryDirectory() as directory:
+            log_file = Path(directory) / "bot.jsonl"
+            log_file.write_text(
+                "not-json\n"
+                + _json_line({"ts": "2999-01-01T00:00:00+00:00", "event": "started"}),
+                encoding="utf-8",
+            )
+
+            self.assertEqual(len(read_recent_events(log_file)), 1)
+
+
+def _json_line(payload: dict[str, object]) -> str:
+    import json
+
+    return json.dumps(payload, separators=(",", ":")) + "\n"
 
 
 if __name__ == "__main__":

@@ -10,6 +10,7 @@ from typing import Any
 from .auto_trader import AutoConfig, AutoTrader
 from .config import Settings
 from .notifier import Notification, Notifier
+from .status_web import StatusWebConfig, run_status_server
 from .trader import OrderPlan, Trader
 from .upbit_client import UpbitApiError, UpbitResponse
 
@@ -81,6 +82,15 @@ def build_parser() -> argparse.ArgumentParser:
 
     alert = subparsers.add_parser("test-alert", help="Send a test alert.")
     alert.add_argument("--message", default="Alert test from upbit-auto-trader.")
+
+    status_web = subparsers.add_parser("status-web", help="Run a read-only status web dashboard.")
+    status_web.add_argument("--host", default="127.0.0.1")
+    status_web.add_argument("--port", type=int, default=8080)
+    status_web.add_argument("--log-file", default="upbit_auto_trader.jsonl")
+    status_web.add_argument("--state-file", default=".upbit_auto_state.json")
+    status_web.add_argument("--stop-file", default=".upbit_bot_stop")
+    status_web.add_argument("--stale-after-seconds", type=int, default=900)
+    status_web.add_argument("--recent-limit", type=int, default=25)
 
     return parser
 
@@ -174,6 +184,19 @@ def _dispatch(args: argparse.Namespace, trader: Trader) -> UpbitResponse | Order
         if errors:
             raise RuntimeError("; ".join(errors))
         return UpbitResponse({"message": "test alert sent"}, 200, None)
+    if args.command == "status-web":
+        run_status_server(
+            StatusWebConfig(
+                host=args.host,
+                port=args.port,
+                log_file=Path(args.log_file),
+                state_file=Path(args.state_file),
+                stop_file=Path(args.stop_file),
+                stale_after_seconds=args.stale_after_seconds,
+                recent_limit=args.recent_limit,
+            )
+        )
+        return UpbitResponse({"message": "status web stopped"}, 200, None)
     raise ValueError(f"unknown command: {args.command}")
 
 

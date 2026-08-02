@@ -139,6 +139,14 @@ Send a test alert:
 python -m upbit_bot test-alert --message "alert test"
 ```
 
+Run the read-only status web dashboard:
+
+```powershell
+python -m upbit_bot status-web --host 127.0.0.1 --port 8080
+```
+
+Open `http://127.0.0.1:8080` to see the last cycle, recent errors, current candidate, held positions, and stop status. The dashboard only reads `upbit_auto_trader.jsonl`, `.upbit_auto_state.json`, and `.upbit_bot_stop`; it does not expose buy or sell actions.
+
 24/7 server operation:
 
 - Use `deploy/upbit-auto-trader.service` for systemd.
@@ -173,6 +181,7 @@ Auto trader defaults:
 - Blocks new buys when global crypto news risk is too negative.
 - Writes JSONL logs to `upbit_auto_trader.jsonl`.
 - Stores position peak-price state in `.upbit_auto_state.json`.
+- Provides a read-only status web dashboard with `status-web`.
 - Requires `AUTO_ALLOW_FULL_BALANCE=true` plus `--allow-full-balance` when `--cash-usage-percent` is 99 or higher.
 
 Trailing take-profit defaults:

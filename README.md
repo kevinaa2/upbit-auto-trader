@@ -15,6 +15,8 @@ Keep API keys out of source control and start with small orders.
 
 ## Setup
 
+Short run instructions are also available in `RUNNING.txt`.
+
 PowerShell:
 
 ```powershell

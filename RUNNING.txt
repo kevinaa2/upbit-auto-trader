@@ -1,0 +1,172 @@
+Upbit Auto Trader run guide
+===========================
+
+1. First setup
+--------------
+
+Open the project folder in PyCharm or a terminal.
+
+Copy the local env example:
+
+  copy .env.local.example .env
+
+Fill these values in .env:
+
+  UPBIT_ACCESS_KEY=your_upbit_access_key
+  UPBIT_SECRET_KEY=your_upbit_secret_key
+  OPENAI_API_KEY=your_openai_api_key
+  OPENAI_MODEL=gpt-5-mini
+
+For the first test, keep real trading off:
+
+  UPBIT_LIVE_TRADING=false
+  AUTO_ALLOW_FULL_BALANCE=false
+  MAX_ORDER_KRW=10000
+
+Install requirements:
+
+  pip install -r requirements.txt
+
+There are currently no external pip packages. This command is still useful to
+confirm that the environment is ready.
+
+
+2. Run from terminal
+--------------------
+
+Check a ticker:
+
+  python -m upbit_bot ticker --market KRW-BTC
+
+Check balances:
+
+  python -m upbit_bot balances
+
+Run one dry-run auto cycle:
+
+  python -m upbit_bot run-auto --once --cash-usage-percent 50
+
+Run a continuous dry-run loop every 10 minutes:
+
+  python -m upbit_bot run-auto --interval-seconds 600 --cash-usage-percent 50
+
+Run live auto trading with OpenAI news analysis:
+
+  python -m upbit_bot run-auto --live --yes --allow-full-balance --cash-usage-percent 100 --interval-seconds 600 --use-openai-info
+
+Live auto trading also requires these .env values:
+
+  UPBIT_LIVE_TRADING=true
+  AUTO_ALLOW_FULL_BALANCE=true
+  MAX_ORDER_KRW=0
+
+Stop the auto trader from another terminal:
+
+  python -m upbit_bot stop-auto
+
+You can also stop it with Ctrl+C in the running terminal.
+
+
+3. Run from PyCharm
+-------------------
+
+Open Run/Debug Configurations.
+
+Create a Python configuration:
+
+  Script path: run_bot.py
+  Working directory: project root
+
+Example Parameters:
+
+  ticker --market KRW-BTC
+
+Dry-run auto cycle Parameters:
+
+  run-auto --once --cash-usage-percent 50
+
+Continuous 10-minute dry-run Parameters:
+
+  run-auto --interval-seconds 600 --cash-usage-percent 50
+
+Live auto trading Parameters:
+
+  run-auto --live --yes --allow-full-balance --cash-usage-percent 100 --interval-seconds 600 --use-openai-info
+
+
+4. Run the status web
+---------------------
+
+The status web is read-only. It does not expose buy or sell actions.
+
+Start it:
+
+  python -m upbit_bot status-web --host 127.0.0.1 --port 8080
+
+Open this in your browser:
+
+  http://127.0.0.1:8080
+
+It shows:
+
+  - current status: ok, waiting, stale, error, or stopped
+  - last cycle time
+  - recent errors
+  - current candidate coin
+  - held positions
+  - KRW cash
+  - recent actions and logs
+
+JSON status API:
+
+  http://127.0.0.1:8080/api/status
+
+Health check:
+
+  http://127.0.0.1:8080/health
+
+
+5. Server operation
+-------------------
+
+On a Linux VPS, install systemd services:
+
+  sudo bash deploy/install-systemd.sh /opt/upbit-auto-trader
+
+Edit production env:
+
+  sudo nano /etc/upbit-auto-trader.env
+
+Start the trader and status web:
+
+  sudo systemctl start upbit-auto-trader upbit-status-web
+
+Check logs:
+
+  journalctl -u upbit-auto-trader -f
+  journalctl -u upbit-status-web -f
+
+Open the status web safely through SSH port forwarding:
+
+  ssh -L 8080:127.0.0.1:8080 user@server-ip
+
+Then open this on your PC:
+
+  http://127.0.0.1:8080
+
+
+6. Important safety notes
+-------------------------
+
+Never commit .env to GitHub.
+
+Real orders require all of these:
+
+  UPBIT_LIVE_TRADING=true
+  --live
+  --yes
+
+Using almost 100% of KRW also requires both of these:
+
+  AUTO_ALLOW_FULL_BALANCE=true
+  --allow-full-balance

@@ -1,0 +1,54 @@
+Upbit Auto Trader required modules
+==================================
+
+Python version
+--------------
+- Python 3.11 or newer is recommended.
+
+External pip modules
+--------------------
+- None.
+
+The bot currently uses only Python standard-library modules, so this is enough:
+
+  pip install -r requirements.txt
+
+That command will not install extra packages because there are no runtime
+dependencies.
+
+Python standard-library modules used
+------------------------------------
+- argparse
+- base64
+- dataclasses
+- datetime
+- decimal
+- hashlib
+- hmac
+- html
+- http
+- json
+- mimetypes
+- os
+- pathlib
+- re
+- signal
+- sys
+- time
+- typing
+- unittest
+- urllib
+- uuid
+- xml.etree.ElementTree
+
+System tools for server operation
+---------------------------------
+- git
+- python3
+- systemd on Linux VPS
+
+API keys needed in .env
+-----------------------
+- UPBIT_ACCESS_KEY
+- UPBIT_SECRET_KEY
+- OPENAI_API_KEY, only when using --use-openai-info

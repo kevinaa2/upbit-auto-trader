@@ -39,7 +39,7 @@ class AutoConfig:
     info_weight: Decimal = Decimal("0.25")
     info_sell_threshold: Decimal = Decimal("-0.70")
     global_risk_block_threshold: Decimal = Decimal("-0.80")
-    info_article_limit: int = 40
+    info_article_limit: int = 80
     include_warnings: bool = False
     live: bool = False
     yes: bool = False

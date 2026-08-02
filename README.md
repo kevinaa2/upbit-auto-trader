@@ -192,13 +192,25 @@ python -m upbit_bot run-auto --trailing-start-rate 0.04 --trailing-stop-rate-1 0
 
 Information scoring:
 
-- Default RSS sources are Google News searches for crypto, Bitcoin, Ethereum, Korean crypto terms, and Upbit-related notices.
-- Override sources with comma-separated RSS URLs in `AI_NEWS_FEEDS`.
+- Default RSS sources include CoinDesk, Cointelegraph, Cointelegraph Korea, Decrypt, and Google News searches.
+- Google News searches include broad crypto news, hack/exploit/delisting risk, ETF/SEC news, major altcoin news, Korean crypto terms, Upbit notices, Bithumb notices, and Coinone notices.
+- Override all RSS sources with comma-separated RSS URLs in `AI_NEWS_FEEDS`.
+- Append extra RSS sources with comma-separated RSS URLs in `AI_EXTRA_NEWS_FEEDS`.
+- Override Google News search queries with `AI_NEWS_QUERIES`, separated by `|`.
+- Append extra Google News search queries with `AI_EXTRA_NEWS_QUERIES`, separated by `|`.
 - Keyword analysis is always available and does not require an OpenAI key.
 - OpenAI analysis is optional and only scores the collected articles; the strategy engine still makes the final buy/sell decision.
 - `--info-weight` controls how strongly information changes market momentum scores.
 - `--info-sell-threshold` controls when negative information triggers a sell or blocks a candidate.
 - `--global-risk-block-threshold` blocks new buys when broad market news risk is too negative.
+- The strategy combines market score and information score. Market score comes from 24h volume-adjusted positive momentum, while information score comes from matched news and optional OpenAI analysis.
+
+Example extra sources:
+
+```env
+AI_EXTRA_NEWS_FEEDS=https://example.com/feed.xml,https://example2.com/rss
+AI_EXTRA_NEWS_QUERIES=site:example.com SOL partnership when:7d|site:example2.com XRP lawsuit when:7d
+```
 
 Alerts:
 

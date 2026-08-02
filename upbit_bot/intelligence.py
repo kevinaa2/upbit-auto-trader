@@ -9,15 +9,27 @@ from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Any
 from urllib.error import URLError
-from urllib.parse import quote_plus
+from urllib.parse import quote_plus, urlparse
 from urllib.request import Request, urlopen
 from xml.etree import ElementTree
 
 
 DEFAULT_NEWS_QUERIES = [
-    "crypto OR bitcoin OR ethereum when:1d",
-    "암호화폐 OR 비트코인 OR 이더리움 when:1d",
-    "site:upbit.com crypto OR 코인 OR 상장 OR 유의종목 when:7d",
+    "cryptocurrency OR bitcoin OR ethereum OR altcoin when:1d",
+    "crypto hack OR exploit OR delisting OR lawsuit when:1d",
+    "bitcoin ETF OR ethereum ETF OR SEC crypto when:1d",
+    "solana OR xrp OR chainlink OR dogecoin crypto when:1d",
+    "\uc554\ud638\ud654\ud3d0 OR \ube44\ud2b8\ucf54\uc778 OR \uc774\ub354\ub9ac\uc6c0 OR \uc54c\ud2b8\ucf54\uc778 when:1d",
+    "site:upbit.com/service_center/notice \uc5c5\ube44\ud2b8 OR \uac70\ub798\uc9c0\uc6d0 OR \uc0c1\uc7a5 OR \uc720\uc758\uc885\ubaa9 when:7d",
+    "site:bithumb.com \uac70\ub798\uc9c0\uc6d0 OR \uc0c1\uc7a5 OR \uc720\uc758\uc885\ubaa9 when:7d",
+    "site:coinone.co.kr \uac70\ub798\uc9c0\uc6d0 OR \uc0c1\uc7a5 OR \uc720\uc758\uc885\ubaa9 when:7d",
+]
+
+DEFAULT_RSS_FEEDS = [
+    "https://www.coindesk.com/arc/outboundfeeds/rss/",
+    "https://cointelegraph.com/rss",
+    "https://kr.cointelegraph.com/rss",
+    "https://decrypt.co/feed",
 ]
 
 POSITIVE_KEYWORDS = {
@@ -34,14 +46,15 @@ POSITIVE_KEYWORDS = {
     "integrates",
     "surge",
     "record high",
-    "상장",
-    "파트너십",
-    "업그레이드",
-    "메인넷",
-    "승인",
-    "호재",
-    "급등",
-    "채택",
+    "\uac70\ub798\uc9c0\uc6d0",
+    "\uc0c1\uc7a5",
+    "\ud30c\ud2b8\ub108\uc2ed",
+    "\uc5c5\uadf8\ub808\uc774\ub4dc",
+    "\uba54\uc778\ub137",
+    "\uc2b9\uc778",
+    "\ud638\uc7ac",
+    "\uae09\ub4f1",
+    "\ucc44\ud0dd",
 }
 
 NEGATIVE_KEYWORDS = {
@@ -59,29 +72,31 @@ NEGATIVE_KEYWORDS = {
     "crash",
     "plunge",
     "warning",
-    "해킹",
-    "소송",
-    "상장폐지",
-    "상폐",
-    "유의종목",
-    "규제",
-    "조사",
-    "사기",
-    "급락",
-    "장애",
+    "\ud574\ud0b9",
+    "\uc18c\uc1a1",
+    "\uac70\ub798\uc9c0\uc6d0 \uc885\ub8cc",
+    "\uc0c1\uc7a5\ud3d0\uc9c0",
+    "\uc0c1\ud3d0",
+    "\uc720\uc758\uc885\ubaa9",
+    "\uaddc\uc81c",
+    "\uc870\uc0ac",
+    "\uc0ac\uae30",
+    "\uae09\ub77d",
+    "\uc7a5\uc560",
 }
 
 CRITICAL_KEYWORDS = {
     "delist",
     "delisting",
-    "상장폐지",
-    "상폐",
+    "\uac70\ub798\uc9c0\uc6d0 \uc885\ub8cc",
+    "\uc0c1\uc7a5\ud3d0\uc9c0",
+    "\uc0c1\ud3d0",
     "exploit",
     "hack",
     "hacked",
-    "해킹",
+    "\ud574\ud0b9",
     "fraud",
-    "사기",
+    "\uc0ac\uae30",
 }
 
 
@@ -157,12 +172,29 @@ class NewsCollector:
         raw = os.getenv("AI_NEWS_FEEDS", "").strip()
         if raw:
             return [part.strip() for part in raw.split(",") if part.strip()]
-        return [
+
+        feeds = list(DEFAULT_RSS_FEEDS)
+        feeds.extend(
             "https://news.google.com/rss/search?q="
             + quote_plus(query)
             + "&hl=ko&gl=KR&ceid=KR:ko"
-            for query in DEFAULT_NEWS_QUERIES
-        ]
+            for query in self._news_queries()
+        )
+
+        extra = os.getenv("AI_EXTRA_NEWS_FEEDS", "").strip()
+        if extra:
+            feeds.extend(part.strip() for part in extra.split(",") if part.strip())
+        return feeds
+
+    def _news_queries(self) -> list[str]:
+        raw = os.getenv("AI_NEWS_QUERIES", "").strip()
+        if raw:
+            return [part.strip() for part in raw.split("|") if part.strip()]
+        queries = list(DEFAULT_NEWS_QUERIES)
+        extra = os.getenv("AI_EXTRA_NEWS_QUERIES", "").strip()
+        if extra:
+            queries.extend(part.strip() for part in extra.split("|") if part.strip())
+        return queries
 
     def _read_feed(self, url: str) -> list[NewsItem]:
         request = Request(url, headers={"User-Agent": "upbit-auto-trader/0.1"})
@@ -172,12 +204,15 @@ class NewsCollector:
         except URLError:
             return []
         root = ElementTree.fromstring(raw)
+        return self._rss_items(root) + self._atom_items(root, url)
+
+    def _rss_items(self, root: ElementTree.Element) -> list[NewsItem]:
         items = []
         for node in root.findall(".//item"):
             title = _node_text(node, "title")
             link = _node_text(node, "link")
             summary = _node_text(node, "description")
-            source = _node_text(node, "source")
+            source = _node_text(node, "source") or _source_from_url(link)
             published = _node_text(node, "pubDate")
             if title:
                 items.append(
@@ -186,6 +221,29 @@ class NewsCollector:
                         link=link,
                         summary=_clean_html(summary),
                         source=_clean_html(source),
+                        published=published,
+                    )
+                )
+        return items
+
+    def _atom_items(self, root: ElementTree.Element, feed_url: str) -> list[NewsItem]:
+        items = []
+        for node in root.findall(".//{http://www.w3.org/2005/Atom}entry"):
+            title = _node_text(node, "{http://www.w3.org/2005/Atom}title")
+            link = _atom_link(node)
+            summary = _node_text(node, "{http://www.w3.org/2005/Atom}summary")
+            if not summary:
+                summary = _node_text(node, "{http://www.w3.org/2005/Atom}content")
+            published = _node_text(node, "{http://www.w3.org/2005/Atom}published")
+            if not published:
+                published = _node_text(node, "{http://www.w3.org/2005/Atom}updated")
+            if title:
+                items.append(
+                    NewsItem(
+                        title=_clean_html(title),
+                        link=link,
+                        summary=_clean_html(summary),
+                        source=_source_from_url(link or feed_url),
                         published=published,
                     )
                 )
@@ -271,10 +329,21 @@ class KeywordInfoAnalyzer:
             label = "positive"
         elif score < 0:
             label = "negative"
-        return f"{label}: {article.title[:160]}"
+        return f"{label}: {article.source}: {article.title[:160]}"
 
     def _looks_like_crypto_news(self, text: str) -> bool:
-        return any(term in text for term in ["crypto", "bitcoin", "ethereum", "coin", "암호화폐", "비트코인", "코인"])
+        return any(
+            term in text
+            for term in [
+                "crypto",
+                "bitcoin",
+                "ethereum",
+                "coin",
+                "\uc554\ud638\ud654\ud3d0",
+                "\ube44\ud2b8\ucf54\uc778",
+                "\ucf54\uc778",
+            ]
+        )
 
     def _has_critical_keyword(self, text: str) -> bool:
         return any(keyword in text for keyword in CRITICAL_KEYWORDS)
@@ -304,7 +373,7 @@ class OpenAIInfoAnalyzer:
                 "source": item.source,
                 "published": item.published,
             }
-            for item in articles[:30]
+            for item in articles[:50]
         ]
         prompt = {
             "markets": compact_markets,
@@ -331,7 +400,7 @@ class OpenAIInfoAnalyzer:
                 },
                 {"role": "user", "content": json.dumps(prompt, ensure_ascii=False)},
             ],
-            "max_output_tokens": 900,
+            "max_output_tokens": 1200,
         }
         request = Request(
             "https://api.openai.com/v1/responses",
@@ -402,6 +471,19 @@ def _node_text(node: ElementTree.Element, tag: str) -> str:
     if child is None or child.text is None:
         return ""
     return child.text.strip()
+
+
+def _atom_link(node: ElementTree.Element) -> str:
+    for child in node.findall("{http://www.w3.org/2005/Atom}link"):
+        href = child.attrib.get("href", "").strip()
+        if href:
+            return href
+    return ""
+
+
+def _source_from_url(url: str) -> str:
+    hostname = urlparse(url).hostname or ""
+    return hostname.removeprefix("www.")
 
 
 def _clean_html(value: str) -> str:

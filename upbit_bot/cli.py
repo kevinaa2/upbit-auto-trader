@@ -67,7 +67,7 @@ def build_parser() -> argparse.ArgumentParser:
     auto.add_argument("--info-weight", default="0.25")
     auto.add_argument("--info-sell-threshold", default="-0.70")
     auto.add_argument("--global-risk-block-threshold", default="-0.80")
-    auto.add_argument("--info-article-limit", type=int, default=40)
+    auto.add_argument("--info-article-limit", type=int, default=80)
     auto.add_argument("--include-warnings", action="store_true")
     auto.add_argument("--allow-full-balance", action="store_true")
     auto.add_argument("--once", action="store_true", help="Run one cycle and exit.")

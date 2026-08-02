@@ -8,7 +8,7 @@ from tempfile import TemporaryDirectory
 
 from upbit_bot.auto_trader import AutoConfig, AutoTrader, Position
 from upbit_bot.config import Settings, load_dotenv
-from upbit_bot.intelligence import InfoSignal, KeywordInfoAnalyzer, NewsItem
+from upbit_bot.intelligence import InfoSignal, KeywordInfoAnalyzer, NewsCollector, NewsItem
 from upbit_bot.notifier import Notification, Notifier
 from upbit_bot.trader import OrderPlan, Trader
 from upbit_bot.upbit_client import UpbitClient
@@ -265,6 +265,28 @@ class AutoTraderTests(unittest.TestCase):
 
 
 class IntelligenceTests(unittest.TestCase):
+    def test_news_collector_includes_default_and_extra_sources(self) -> None:
+        original_feeds = os.environ.get("AI_EXTRA_NEWS_FEEDS")
+        original_queries = os.environ.get("AI_EXTRA_NEWS_QUERIES")
+        original_override_feeds = os.environ.get("AI_NEWS_FEEDS")
+        original_override_queries = os.environ.get("AI_NEWS_QUERIES")
+        os.environ.pop("AI_NEWS_FEEDS", None)
+        os.environ.pop("AI_NEWS_QUERIES", None)
+        os.environ["AI_EXTRA_NEWS_FEEDS"] = "https://example.test/rss"
+        os.environ["AI_EXTRA_NEWS_QUERIES"] = "site:example.test BTC when:7d"
+        try:
+            collector = NewsCollector()
+            urls = collector._feed_urls()
+            self.assertTrue(any("coindesk.com" in url for url in urls))
+            self.assertTrue(any("cointelegraph.com/rss" in url for url in urls))
+            self.assertIn("https://example.test/rss", urls)
+            self.assertTrue(any("site%3Aexample.test" in url for url in urls))
+        finally:
+            _restore_env("AI_EXTRA_NEWS_FEEDS", original_feeds)
+            _restore_env("AI_EXTRA_NEWS_QUERIES", original_queries)
+            _restore_env("AI_NEWS_FEEDS", original_override_feeds)
+            _restore_env("AI_NEWS_QUERIES", original_override_queries)
+
     def test_keyword_analyzer_scores_market_news(self) -> None:
         analyzer = KeywordInfoAnalyzer()
         signal = analyzer.analyze(
@@ -289,6 +311,13 @@ class IntelligenceTests(unittest.TestCase):
         self.assertIn("KRW-BTC", signal.market_scores)
         self.assertLess(signal.market_scores["KRW-BTC"], Decimal("0"))
         self.assertIn("KRW-BTC", signal.blocked_markets)
+
+
+def _restore_env(name: str, value: str | None) -> None:
+    if value is None:
+        os.environ.pop(name, None)
+    else:
+        os.environ[name] = value
 
 
 class NotifierTests(unittest.TestCase):

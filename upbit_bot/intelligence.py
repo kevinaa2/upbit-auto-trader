@@ -352,7 +352,7 @@ class KeywordInfoAnalyzer:
 class OpenAIInfoAnalyzer:
     def __init__(self, model: str | None = None, timeout: float = 20.0) -> None:
         self.api_key = os.getenv("OPENAI_API_KEY", "").strip()
-        self.model = model or os.getenv("OPENAI_MODEL", "gpt-5").strip()
+        self.model = model or os.getenv("OPENAI_MODEL", "gpt-5-mini").strip()
         self.timeout = timeout
 
     def analyze(self, markets: list[dict[str, Any]], articles: list[NewsItem]) -> InfoSignal:

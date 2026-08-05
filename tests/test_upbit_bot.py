@@ -339,6 +339,13 @@ class IntelligenceTests(unittest.TestCase):
             urls = collector._feed_urls()
             self.assertTrue(any("coindesk.com" in url for url in urls))
             self.assertTrue(any("cointelegraph.com/rss" in url for url in urls))
+            self.assertTrue(any("site%3Atokenpost.kr" in url for url in urls))
+            self.assertTrue(any("site%3Ablockmedia.co.kr" in url for url in urls))
+            self.assertTrue(any("site%3Adigitalasset.works" in url for url in urls))
+            self.assertTrue(any("site%3Adecenter.kr" in url for url in urls))
+            self.assertTrue(any("site%3Acoinreaders.com" in url for url in urls))
+            self.assertTrue(any("site%3Acoinness.com" in url for url in urls))
+            self.assertTrue(any("site%3Azdnet.co.kr" in url for url in urls))
             self.assertIn("https://example.test/rss", urls)
             self.assertTrue(any("site%3Aexample.test" in url for url in urls))
         finally:

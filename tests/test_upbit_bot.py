@@ -183,6 +183,65 @@ class AutoTraderTests(unittest.TestCase):
         self.assertIsNotNone(candidate)
         self.assertEqual(candidate.market, "KRW-BBB")
 
+    def test_select_candidate_skips_overheated_without_strong_info(self) -> None:
+        auto = AutoTrader(self.settings())
+        config = AutoConfig(
+            cash_usage_percent=Decimal("50"),
+            min_change_rate=Decimal("0.01"),
+            max_change_rate=Decimal("0.12"),
+            min_24h_volume=Decimal("1000"),
+        )
+        candidate = auto.select_candidate(
+            [
+                {
+                    "market": "KRW-HOT",
+                    "signed_change_rate": "0.24",
+                    "acc_trade_price_24h": "1000000000",
+                    "trade_price": "10",
+                },
+                {
+                    "market": "KRW-OK",
+                    "signed_change_rate": "0.02",
+                    "acc_trade_price_24h": "100000",
+                    "trade_price": "10",
+                },
+            ],
+            config,
+        )
+        self.assertIsNotNone(candidate)
+        self.assertEqual(candidate.market, "KRW-OK")
+
+    def test_select_candidate_allows_overheated_with_strong_info(self) -> None:
+        auto = AutoTrader(self.settings())
+        config = AutoConfig(
+            cash_usage_percent=Decimal("50"),
+            min_change_rate=Decimal("0.01"),
+            max_change_rate=Decimal("0.12"),
+            overheat_info_threshold=Decimal("0.50"),
+            min_24h_volume=Decimal("1000"),
+        )
+        signal = InfoSignal(market_scores={"KRW-HOT": Decimal("0.60")})
+        candidate = auto.select_candidate(
+            [
+                {
+                    "market": "KRW-HOT",
+                    "signed_change_rate": "0.24",
+                    "acc_trade_price_24h": "1000000000",
+                    "trade_price": "10",
+                },
+                {
+                    "market": "KRW-OK",
+                    "signed_change_rate": "0.02",
+                    "acc_trade_price_24h": "100000",
+                    "trade_price": "10",
+                },
+            ],
+            config,
+            signal,
+        )
+        self.assertIsNotNone(candidate)
+        self.assertEqual(candidate.market, "KRW-HOT")
+
     def test_full_balance_requires_double_unlock(self) -> None:
         auto = AutoTrader(self.settings(allow_full_balance=False))
         with self.assertRaises(RuntimeError):

@@ -23,6 +23,8 @@ class AutoConfig:
     interval_seconds: int = 60
     cash_usage_percent: Decimal = Decimal("100")
     min_change_rate: Decimal = Decimal("0.005")
+    max_change_rate: Decimal = Decimal("0.12")
+    overheat_info_threshold: Decimal = Decimal("0.50")
     min_24h_volume: Decimal = Decimal("1000000000")
     stop_loss_rate: Decimal = Decimal("-0.02")
     take_profit_rate: Decimal = Decimal("0")
@@ -191,6 +193,12 @@ class AutoTrader:
             trade_price = self._decimal(item.get("trade_price", "0"))
             info_score = info_signal.market_score(market)
             if change_rate < config.min_change_rate:
+                continue
+            if (
+                config.max_change_rate > 0
+                and change_rate > config.max_change_rate
+                and info_score < config.overheat_info_threshold
+            ):
                 continue
             if volume_24h < config.min_24h_volume:
                 continue
@@ -399,6 +407,10 @@ class AutoTrader:
             self.settings.require_keys()
         if config.cash_usage_percent <= 0 or config.cash_usage_percent > 100:
             raise ValueError("--cash-usage-percent must be > 0 and <= 100")
+        if config.max_change_rate < 0:
+            raise ValueError("--max-change-rate must be 0 or greater")
+        if config.overheat_info_threshold < -1 or config.overheat_info_threshold > 1:
+            raise ValueError("--overheat-info-threshold must be between -1 and 1")
         if config.cash_usage_percent >= 99:
             if not config.allow_full_balance or not self.settings.allow_full_balance_autotrade:
                 raise RuntimeError(

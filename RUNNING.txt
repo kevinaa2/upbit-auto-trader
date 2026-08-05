@@ -50,6 +50,11 @@ Run a continuous dry-run loop every 10 minutes:
 
   python -m upbit_bot run-auto --interval-seconds 600 --cash-usage-percent 50
 
+The default strategy skips coins above +12% 24h change unless matched news or AI
+information is strongly positive. To adjust that:
+
+  python -m upbit_bot run-auto --max-change-rate 0.08 --overheat-info-threshold 0.50
+
 Run live auto trading with OpenAI news analysis:
 
   python -m upbit_bot run-auto --live --yes --allow-full-balance --cash-usage-percent 100 --interval-seconds 600 --use-openai-info

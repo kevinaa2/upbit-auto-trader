@@ -52,6 +52,8 @@ def build_parser() -> argparse.ArgumentParser:
     auto.add_argument("--interval-seconds", type=int, default=60)
     auto.add_argument("--cash-usage-percent", default="100")
     auto.add_argument("--min-change-rate", default="0.005")
+    auto.add_argument("--max-change-rate", default="0.12")
+    auto.add_argument("--overheat-info-threshold", default="0.50")
     auto.add_argument("--min-24h-volume", default="1000000000")
     auto.add_argument("--stop-loss-rate", default="-0.02")
     auto.add_argument("--take-profit-rate", default="0")
@@ -134,6 +136,8 @@ def _dispatch(args: argparse.Namespace, trader: Trader) -> UpbitResponse | Order
             interval_seconds=args.interval_seconds,
             cash_usage_percent=Decimal(args.cash_usage_percent),
             min_change_rate=Decimal(args.min_change_rate),
+            max_change_rate=Decimal(args.max_change_rate),
+            overheat_info_threshold=Decimal(args.overheat_info_threshold),
             min_24h_volume=Decimal(args.min_24h_volume),
             stop_loss_rate=Decimal(args.stop_loss_rate),
             take_profit_rate=Decimal(args.take_profit_rate),

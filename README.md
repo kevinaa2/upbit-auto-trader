@@ -177,9 +177,12 @@ Auto trader defaults:
 - Excludes warning markets unless `--include-warnings` is passed.
 - Buys the strongest candidate by 24h volume-adjusted positive momentum.
 - Skips overheated candidates above `--max-change-rate 0.12` unless information score is at least `--overheat-info-threshold 0.50`.
+- Ignores dust balances below `MIN_ORDER_KRW` so tiny leftover coins do not block new buys.
 - Collects crypto news from RSS feeds and adjusts candidate scores with external information.
+- Blocks new buys when information collection has errors or fewer than `--min-info-articles-for-buy 1` articles.
 - Can optionally call the OpenAI Responses API when `--use-openai-info` and `OPENAI_API_KEY` are set.
 - Sells on `--stop-loss-rate`, trailing take-profit, optional `--take-profit-rate`, or rotation to a stronger candidate.
+- Refreshes balances after a live sell, so a replacement buy can happen in the same cycle when cash is available.
 - Sells when strong negative external information is detected for the held market.
 - Blocks new buys when global crypto news risk is too negative.
 - Writes JSONL logs to `upbit_auto_trader.jsonl`.
@@ -218,6 +221,7 @@ Information scoring:
 - `--global-risk-block-threshold` blocks new buys when broad market news risk is too negative.
 - `--max-change-rate` avoids chasing sudden 24h price spikes; use `0` to disable it.
 - `--overheat-info-threshold` allows an overheated candidate only when matched news/AI information is strongly positive.
+- `--min-info-articles-for-buy` controls how many collected articles are required before new buys are allowed.
 - The strategy combines market score and information score. Market score comes from 24h volume-adjusted positive momentum, while information score comes from matched news and optional OpenAI analysis.
 
 Example extra sources:

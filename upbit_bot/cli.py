@@ -71,6 +71,7 @@ def build_parser() -> argparse.ArgumentParser:
     auto.add_argument("--info-sell-threshold", default="-0.70")
     auto.add_argument("--global-risk-block-threshold", default="-0.80")
     auto.add_argument("--info-article-limit", type=int, default=80)
+    auto.add_argument("--min-info-articles-for-buy", type=int, default=1)
     auto.add_argument("--include-warnings", action="store_true")
     auto.add_argument("--allow-full-balance", action="store_true")
     auto.add_argument("--once", action="store_true", help="Run one cycle and exit.")
@@ -155,6 +156,7 @@ def _dispatch(args: argparse.Namespace, trader: Trader) -> UpbitResponse | Order
             info_sell_threshold=Decimal(args.info_sell_threshold),
             global_risk_block_threshold=Decimal(args.global_risk_block_threshold),
             info_article_limit=args.info_article_limit,
+            min_info_articles_for_buy=args.min_info_articles_for_buy,
             include_warnings=args.include_warnings,
             live=args.live,
             yes=args.yes,

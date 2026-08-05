@@ -42,6 +42,7 @@ class AutoConfig:
     info_sell_threshold: Decimal = Decimal("-0.70")
     global_risk_block_threshold: Decimal = Decimal("-0.80")
     info_article_limit: int = 80
+    min_info_articles_for_buy: int = 1
     include_warnings: bool = False
     live: bool = False
     yes: bool = False
@@ -139,7 +140,6 @@ class AutoTrader:
         balances = self.trader.balances().data
         positions = self.positions(balances, ticker_by_market, config.quote, info_signal)
         positions = self.apply_position_state(positions, config)
-        self._save_state(config.state_file)
         cash = self.cash_balance(balances, config.quote)
 
         actions: list[dict[str, Any]] = []
@@ -156,8 +156,24 @@ class AutoTrader:
                 )
                 actions.append(self._action("sell", position.market, sell_reason, result))
 
+        if any(action.get("type") == "sell" and not action.get("dry_run") for action in actions):
+            balances = self.trader.balances().data
+            positions = self.positions(balances, ticker_by_market, config.quote, info_signal)
+            positions = self.apply_position_state(positions, config)
+            cash = self.cash_balance(balances, config.quote)
+            held_markets = {position.market for position in positions}
+
+        self._save_state(config.state_file)
+
         risk_off = info_signal.global_risk_score <= config.global_risk_block_threshold
-        if not positions and candidate is not None and cash >= self.settings.min_order_krw and not risk_off:
+        buy_block_reason = self.new_buy_block_reason(info_signal, config)
+        if (
+            not positions
+            and candidate is not None
+            and cash >= self.settings.min_order_krw
+            and not risk_off
+            and buy_block_reason is None
+        ):
             buy_amount = self.buy_amount(cash, config)
             if buy_amount >= self.settings.min_order_krw:
                 result = self.trader.market_buy(
@@ -167,6 +183,8 @@ class AutoTrader:
                     yes=config.yes,
                 )
                 actions.append(self._action("buy", candidate.market, "top_candidate", result))
+        elif not positions and candidate is not None and buy_block_reason is not None:
+            actions.append({"type": "skip_buy", "market": candidate.market, "reason": buy_block_reason})
         elif positions and candidate is not None and candidate.market in held_markets:
             actions.append({"type": "hold", "market": candidate.market, "reason": "already_holding_top_candidate"})
 
@@ -253,6 +271,8 @@ class AutoTrader:
             change_rate = self._decimal(ticker.get("signed_change_rate", "0"))
             volume_24h = self._decimal(ticker.get("acc_trade_price_24h", "0"))
             value_krw = balance * current_price
+            if value_krw < self.settings.min_order_krw:
+                continue
             momentum_score = max(change_rate, Decimal("0")) * volume_24h
             info_score = info_signal.market_score(market)
             pnl_rate = None
@@ -349,6 +369,15 @@ class AutoTrader:
             return "rotate_to_stronger_candidate"
         return None
 
+    def new_buy_block_reason(self, info_signal: InfoSignal, config: AutoConfig) -> str | None:
+        if not config.use_info:
+            return None
+        if info_signal.errors:
+            return "information_errors"
+        if info_signal.article_count < config.min_info_articles_for_buy:
+            return "not_enough_information"
+        return None
+
     def trailing_stop_hit(self, position: Position, config: AutoConfig) -> bool:
         if position.pnl_rate is None or position.pnl_rate < config.trailing_start_rate:
             return False
@@ -420,6 +449,8 @@ class AutoTrader:
             raise ValueError("--interval-seconds must be at least 5")
         if config.info_article_limit < 1:
             raise ValueError("--info-article-limit must be at least 1")
+        if config.min_info_articles_for_buy < 0:
+            raise ValueError("--min-info-articles-for-buy must be 0 or greater")
         if config.alert_heartbeat_cycles < 0:
             raise ValueError("--alert-heartbeat-cycles must be 0 or greater")
         if config.trailing_start_rate < 0:

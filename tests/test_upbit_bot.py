@@ -12,7 +12,7 @@ from upbit_bot.intelligence import InfoSignal, KeywordInfoAnalyzer, NewsCollecto
 from upbit_bot.notifier import Notification, Notifier
 from upbit_bot.status_web import build_status, read_recent_events
 from upbit_bot.trader import OrderPlan, Trader
-from upbit_bot.upbit_client import UpbitClient
+from upbit_bot.upbit_client import UpbitClient, UpbitResponse
 
 
 class FakeClient:
@@ -22,6 +22,68 @@ class FakeClient:
     def create_order(self, payload: dict[str, str]):
         self.orders.append(payload)
         return "created"
+
+
+class FakeAutoTraderApi:
+    def __init__(self, settings: Settings) -> None:
+        self.settings = settings
+        self.sell_orders: list[tuple[str, str, bool, bool]] = []
+        self.buy_orders: list[tuple[str, str, bool, bool]] = []
+        self.balance_calls = 0
+
+    def markets(self, quote: str, include_warnings: bool) -> UpbitResponse:
+        return UpbitResponse(
+            [
+                {"market": "KRW-OLD", "korean_name": "Old", "english_name": "Old"},
+                {"market": "KRW-NEW", "korean_name": "New", "english_name": "New"},
+            ],
+            200,
+            None,
+        )
+
+    def tickers(self, markets: list[str]) -> UpbitResponse:
+        return UpbitResponse(
+            [
+                {
+                    "market": "KRW-OLD",
+                    "signed_change_rate": "-0.10",
+                    "acc_trade_price_24h": "100000",
+                    "trade_price": "90",
+                },
+                {
+                    "market": "KRW-NEW",
+                    "signed_change_rate": "0.02",
+                    "acc_trade_price_24h": "1000000",
+                    "trade_price": "10",
+                },
+            ],
+            200,
+            None,
+        )
+
+    def balances(self) -> UpbitResponse:
+        self.balance_calls += 1
+        if self.balance_calls == 1:
+            data = [
+                {"currency": "KRW", "balance": "0"},
+                {"currency": "OLD", "balance": "100", "avg_buy_price": "100"},
+            ]
+        else:
+            data = [{"currency": "KRW", "balance": "10000"}]
+        return UpbitResponse(data, 200, None)
+
+    def market_sell(self, market: str, volume: str, live: bool, yes: bool) -> UpbitResponse:
+        self.sell_orders.append((market, volume, live, yes))
+        return UpbitResponse({"uuid": "sell-uuid"}, 201, None)
+
+    def market_buy(self, market: str, krw: str, live: bool, yes: bool) -> UpbitResponse:
+        self.buy_orders.append((market, krw, live, yes))
+        return UpbitResponse({"uuid": "buy-uuid"}, 201, None)
+
+
+class FakeIntelligence:
+    def evaluate(self, markets: list[dict[str, object]], limit: int = 40) -> InfoSignal:
+        return InfoSignal(article_count=1, summary="ok")
 
 
 class UpbitClientTests(unittest.TestCase):
@@ -241,6 +303,60 @@ class AutoTraderTests(unittest.TestCase):
         )
         self.assertIsNotNone(candidate)
         self.assertEqual(candidate.market, "KRW-HOT")
+
+    def test_positions_ignore_dust_balances(self) -> None:
+        auto = AutoTrader(self.settings())
+        positions = auto.positions(
+            [
+                {"currency": "KRW", "balance": "10000"},
+                {"currency": "DUST", "balance": "1", "avg_buy_price": "10"},
+                {"currency": "KEEP", "balance": "1000", "avg_buy_price": "10"},
+            ],
+            {
+                "KRW-DUST": {"trade_price": "10", "signed_change_rate": "0", "acc_trade_price_24h": "1000"},
+                "KRW-KEEP": {"trade_price": "10", "signed_change_rate": "0", "acc_trade_price_24h": "1000"},
+            },
+            "KRW",
+        )
+
+        self.assertEqual([position.market for position in positions], ["KRW-KEEP"])
+
+    def test_new_buy_blocks_when_information_unavailable(self) -> None:
+        auto = AutoTrader(self.settings())
+
+        self.assertEqual(
+            auto.new_buy_block_reason(InfoSignal(article_count=0), AutoConfig()),
+            "not_enough_information",
+        )
+        self.assertEqual(
+            auto.new_buy_block_reason(InfoSignal(article_count=1, errors=["boom"]), AutoConfig()),
+            "information_errors",
+        )
+        self.assertIsNone(
+            auto.new_buy_block_reason(InfoSignal(article_count=0), AutoConfig(use_info=False))
+        )
+
+    def test_run_once_rebuys_after_live_sell_refreshes_balances(self) -> None:
+        settings = self.settings(allow_full_balance=True)
+        fake_trader = FakeAutoTraderApi(settings)
+        auto = AutoTrader(settings, fake_trader, FakeIntelligence())  # type: ignore[arg-type]
+
+        summary = auto.run_once(
+            AutoConfig(
+                live=True,
+                yes=True,
+                allow_full_balance=True,
+                cash_usage_percent=Decimal("100"),
+                min_change_rate=Decimal("0.01"),
+                min_24h_volume=Decimal("1000"),
+                stop_loss_rate=Decimal("-0.02"),
+            )
+        )
+
+        self.assertEqual(len(fake_trader.sell_orders), 1)
+        self.assertEqual(len(fake_trader.buy_orders), 1)
+        self.assertEqual(fake_trader.buy_orders[0][0], "KRW-NEW")
+        self.assertEqual([action["type"] for action in summary["actions"]], ["sell", "buy"])
 
     def test_full_balance_requires_double_unlock(self) -> None:
         auto = AutoTrader(self.settings(allow_full_balance=False))

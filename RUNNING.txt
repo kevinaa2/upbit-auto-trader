@@ -55,6 +55,11 @@ information is strongly positive. To adjust that:
 
   python -m upbit_bot run-auto --max-change-rate 0.08 --overheat-info-threshold 0.50
 
+New buys are blocked when information collection fails or collects no articles.
+To require more confirmation articles:
+
+  python -m upbit_bot run-auto --min-info-articles-for-buy 3
+
 Run live auto trading with OpenAI news analysis:
 
   python -m upbit_bot run-auto --live --yes --allow-full-balance --cash-usage-percent 100 --interval-seconds 600 --use-openai-info

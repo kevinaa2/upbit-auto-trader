@@ -43,6 +43,7 @@ class AutoConfig:
     global_risk_block_threshold: Decimal = Decimal("-0.80")
     info_article_limit: int = 80
     min_info_articles_for_buy: int = 1
+    min_info_score_for_buy: Decimal = Decimal("0")
     include_warnings: bool = False
     live: bool = False
     yes: bool = False
@@ -166,7 +167,7 @@ class AutoTrader:
         self._save_state(config.state_file)
 
         risk_off = info_signal.global_risk_score <= config.global_risk_block_threshold
-        buy_block_reason = self.new_buy_block_reason(info_signal, config)
+        buy_block_reason = self.new_buy_block_reason(candidate, info_signal, config)
         if (
             not positions
             and candidate is not None
@@ -369,13 +370,20 @@ class AutoTrader:
             return "rotate_to_stronger_candidate"
         return None
 
-    def new_buy_block_reason(self, info_signal: InfoSignal, config: AutoConfig) -> str | None:
+    def new_buy_block_reason(
+        self,
+        candidate: Candidate | None,
+        info_signal: InfoSignal,
+        config: AutoConfig,
+    ) -> str | None:
         if not config.use_info:
             return None
         if info_signal.errors:
             return "information_errors"
         if info_signal.article_count < config.min_info_articles_for_buy:
             return "not_enough_information"
+        if candidate is not None and candidate.info_score < config.min_info_score_for_buy:
+            return "candidate_info_below_minimum"
         return None
 
     def trailing_stop_hit(self, position: Position, config: AutoConfig) -> bool:
@@ -451,6 +459,8 @@ class AutoTrader:
             raise ValueError("--info-article-limit must be at least 1")
         if config.min_info_articles_for_buy < 0:
             raise ValueError("--min-info-articles-for-buy must be 0 or greater")
+        if config.min_info_score_for_buy < -1 or config.min_info_score_for_buy > 1:
+            raise ValueError("--min-info-score-for-buy must be between -1 and 1")
         if config.alert_heartbeat_cycles < 0:
             raise ValueError("--alert-heartbeat-cycles must be 0 or greater")
         if config.trailing_start_rate < 0:

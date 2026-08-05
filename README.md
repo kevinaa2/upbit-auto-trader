@@ -186,6 +186,7 @@ Auto trader defaults:
 - Ignores dust balances below `MIN_ORDER_KRW` so tiny leftover coins do not block new buys.
 - Collects crypto news from RSS feeds and adjusts candidate scores with external information.
 - Blocks new buys when information collection has errors or fewer than `--min-info-articles-for-buy 1` articles.
+- Blocks new buys when the top candidate's information score is below `--min-info-score-for-buy 0`.
 - Can optionally call the OpenAI Responses API when `--use-openai-info` and `OPENAI_API_KEY` are set.
 - Sells on `--stop-loss-rate`, trailing take-profit, optional `--take-profit-rate`, or rotation to a stronger candidate.
 - Refreshes balances after a live sell, so a replacement buy can happen in the same cycle when cash is available.

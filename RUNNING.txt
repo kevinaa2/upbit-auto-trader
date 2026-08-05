@@ -64,6 +64,11 @@ To require more confirmation articles:
 
   python -m upbit_bot run-auto --min-info-articles-for-buy 3
 
+New buys are also blocked when the top candidate's information score is negative
+by default. To make that stricter or looser:
+
+  python -m upbit_bot run-auto --min-info-score-for-buy 0.2
+
 Run live auto trading with OpenAI news analysis:
 
   python -m upbit_bot run-auto --live --yes --allow-full-balance --cash-usage-percent 100 --interval-seconds 600 --use-openai-info
@@ -105,7 +110,7 @@ Continuous 10-minute dry-run Parameters:
 
 Live auto trading Parameters:
 
-  run-auto --live --yes --allow-full-balance --cash-usage-percent 100 --interval-seconds 600 --use-openai-info
+  run-auto --live --yes --allow-full-balance --cash-usage-percent 100 --interval-seconds 600 --use-openai-info --min-info-score-for-buy 0
 
 
 4. Run the status web

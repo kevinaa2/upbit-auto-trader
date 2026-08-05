@@ -325,15 +325,43 @@ class AutoTraderTests(unittest.TestCase):
         auto = AutoTrader(self.settings())
 
         self.assertEqual(
-            auto.new_buy_block_reason(InfoSignal(article_count=0), AutoConfig()),
+            auto.new_buy_block_reason(None, InfoSignal(article_count=0), AutoConfig()),
             "not_enough_information",
         )
         self.assertEqual(
-            auto.new_buy_block_reason(InfoSignal(article_count=1, errors=["boom"]), AutoConfig()),
+            auto.new_buy_block_reason(None, InfoSignal(article_count=1, errors=["boom"]), AutoConfig()),
             "information_errors",
         )
         self.assertIsNone(
-            auto.new_buy_block_reason(InfoSignal(article_count=0), AutoConfig(use_info=False))
+            auto.new_buy_block_reason(None, InfoSignal(article_count=0), AutoConfig(use_info=False))
+        )
+
+    def test_new_buy_blocks_negative_candidate_information(self) -> None:
+        auto = AutoTrader(self.settings())
+        candidate = auto.select_candidate(
+            [
+                {
+                    "market": "KRW-BADNEWS",
+                    "signed_change_rate": "0.03",
+                    "acc_trade_price_24h": "10000000000",
+                    "trade_price": "100",
+                }
+            ],
+            AutoConfig(min_change_rate=Decimal("0.01")),
+            InfoSignal(article_count=5, market_scores={"KRW-BADNEWS": Decimal("-0.2")}),
+        )
+
+        self.assertIsNotNone(candidate)
+        self.assertEqual(
+            auto.new_buy_block_reason(candidate, InfoSignal(article_count=5), AutoConfig()),
+            "candidate_info_below_minimum",
+        )
+        self.assertIsNone(
+            auto.new_buy_block_reason(
+                candidate,
+                InfoSignal(article_count=5),
+                AutoConfig(min_info_score_for_buy=Decimal("-0.3")),
+            )
         )
 
     def test_run_once_rebuys_after_live_sell_refreshes_balances(self) -> None:

@@ -42,6 +42,10 @@ Check balances:
 
   python -m upbit_bot balances
 
+Check which API settings are loaded without showing secrets:
+
+  python -m upbit_bot check-env
+
 Run one dry-run auto cycle:
 
   python -m upbit_bot run-auto --once --cash-usage-percent 50

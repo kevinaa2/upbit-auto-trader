@@ -71,6 +71,12 @@ Check balances:
 python -m upbit_bot balances
 ```
 
+Check loaded API settings without printing secrets:
+
+```powershell
+python -m upbit_bot check-env
+```
+
 Dry-run market buy:
 
 ```powershell

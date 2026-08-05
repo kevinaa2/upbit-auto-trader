@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from decimal import Decimal
 from pathlib import Path
@@ -86,6 +87,8 @@ def build_parser() -> argparse.ArgumentParser:
     alert = subparsers.add_parser("test-alert", help="Send a test alert.")
     alert.add_argument("--message", default="Alert test from upbit-auto-trader.")
 
+    subparsers.add_parser("check-env", help="Show masked environment configuration diagnostics.")
+
     status_web = subparsers.add_parser("status-web", help="Run a read-only status web dashboard.")
     status_web.add_argument("--host", default="127.0.0.1")
     status_web.add_argument("--port", type=int, default=8080)
@@ -123,6 +126,8 @@ def _dispatch(args: argparse.Namespace, trader: Trader) -> UpbitResponse | Order
         return trader.ticker(args.market)
     if args.command == "balances":
         return trader.balances()
+    if args.command == "check-env":
+        return UpbitResponse(_env_diagnostics(trader.settings), 200, None)
     if args.command == "buy":
         return trader.market_buy(args.market, args.krw, args.live, args.yes)
     if args.command == "sell":
@@ -204,6 +209,68 @@ def _dispatch(args: argparse.Namespace, trader: Trader) -> UpbitResponse | Order
         )
         return UpbitResponse({"message": "status web stopped"}, 200, None)
     raise ValueError(f"unknown command: {args.command}")
+
+
+def _env_diagnostics(settings: Settings) -> dict[str, Any]:
+    env_file = Path(".env")
+    env_values = _read_env_file_values(env_file)
+    openai_key = os.getenv("OPENAI_API_KEY", "").strip()
+    openai_model = os.getenv("OPENAI_MODEL", "gpt-5-mini").strip()
+    env_openai_key = env_values.get("OPENAI_API_KEY", "")
+    runtime_matches_env = (
+        bool(openai_key)
+        and bool(env_openai_key)
+        and openai_key == env_openai_key
+    )
+    return {
+        "env_file": {
+            "path": str(env_file),
+            "exists": env_file.exists(),
+            "has_openai_api_key": bool(env_openai_key),
+            "openai_api_key": _mask_secret(env_openai_key),
+        },
+        "runtime": {
+            "upbit_access_key_set": bool(settings.access_key),
+            "upbit_secret_key_set": bool(settings.secret_key),
+            "openai_api_key_set": bool(openai_key),
+            "openai_api_key": _mask_secret(openai_key),
+            "openai_model": openai_model,
+        },
+        "checks": {
+            "runtime_openai_key_matches_env_file": runtime_matches_env,
+            "possible_environment_override": bool(openai_key)
+            and bool(env_openai_key)
+            and openai_key != env_openai_key,
+        },
+    }
+
+
+def _read_env_file_values(path: Path) -> dict[str, str]:
+    if not path.exists():
+        return {}
+    values: dict[str, str] = {}
+    for raw_line in path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        name, value = line.split("=", 1)
+        name = name.strip()
+        value = value.strip()
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in {"'", '"'}:
+            value = value[1:-1]
+        if name:
+            values[name] = value
+    return values
+
+
+def _mask_secret(value: str) -> dict[str, Any]:
+    if not value:
+        return {"set": False, "length": 0, "preview": ""}
+    if len(value) <= 10:
+        preview = value[0] + "***" + value[-1]
+    else:
+        preview = value[:7] + "..." + value[-4:]
+    return {"set": True, "length": len(value), "preview": preview}
 
 
 def _format_result(result: UpbitResponse | OrderPlan) -> str:

@@ -8,7 +8,7 @@ from tempfile import TemporaryDirectory
 
 from upbit_bot.auto_trader import AutoConfig, AutoTrader, Position
 from upbit_bot.config import Settings, load_dotenv
-from upbit_bot.intelligence import InfoSignal, KeywordInfoAnalyzer, NewsCollector, NewsItem
+from upbit_bot.intelligence import InfoSignal, KeywordInfoAnalyzer, NewsCollector, NewsItem, OpenAIInfoAnalyzer
 from upbit_bot.notifier import Notification, Notifier
 from upbit_bot.status_web import build_status, read_recent_events
 from upbit_bot.trader import OrderPlan, Trader
@@ -494,6 +494,20 @@ class IntelligenceTests(unittest.TestCase):
         self.assertIn("KRW-BTC", signal.market_scores)
         self.assertLess(signal.market_scores["KRW-BTC"], Decimal("0"))
         self.assertIn("KRW-BTC", signal.blocked_markets)
+
+    def test_openai_analyzer_requests_structured_json_output(self) -> None:
+        analyzer = OpenAIInfoAnalyzer(model="gpt-5-mini")
+        payload = analyzer._request_payload(
+            [{"market": "KRW-BTC", "korean_name": "비트코인", "english_name": "Bitcoin"}],
+            [NewsItem(title="Bitcoin ETF approval", link="https://example.test")],
+        )
+
+        text_format = payload["text"]["format"]
+        self.assertEqual(text_format["type"], "json_schema")
+        self.assertTrue(text_format["strict"])
+        self.assertEqual(text_format["name"], "crypto_news_signal")
+        self.assertEqual(payload["reasoning"]["effort"], "low")
+        self.assertGreaterEqual(payload["max_output_tokens"], 2000)
 
 
 def _restore_env(name: str, value: str | None) -> None:

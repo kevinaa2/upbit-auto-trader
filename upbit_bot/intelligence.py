@@ -365,6 +365,36 @@ class OpenAIInfoAnalyzer:
     def analyze(self, markets: list[dict[str, Any]], articles: list[NewsItem]) -> InfoSignal:
         if not self.api_key:
             return InfoSignal(article_count=len(articles), errors=["OPENAI_API_KEY is not set"])
+        payload = self._request_payload(markets, articles)
+        request = Request(
+            "https://api.openai.com/v1/responses",
+            data=json.dumps(payload).encode("utf-8"),
+            headers={
+                "Authorization": f"Bearer {self.api_key}",
+                "Content-Type": "application/json",
+            },
+            method="POST",
+        )
+        try:
+            with urlopen(request, timeout=self.timeout) as response:
+                data = json.loads(response.read().decode("utf-8"))
+        except Exception as exc:
+            return InfoSignal(article_count=len(articles), errors=[f"OpenAI analysis failed: {exc}"])
+        text = self._extract_text(data)
+        if not text.strip():
+            status = data.get("status", "unknown")
+            incomplete = data.get("incomplete_details", {})
+            return InfoSignal(
+                article_count=len(articles),
+                errors=[f"OpenAI response text was empty: status={status}, incomplete_details={incomplete}"],
+            )
+        try:
+            parsed = json.loads(_strip_json_fence(text))
+        except json.JSONDecodeError as exc:
+            return InfoSignal(article_count=len(articles), errors=[f"OpenAI JSON parse failed: {exc}"])
+        return self._signal_from_json(parsed, len(articles))
+
+    def _request_payload(self, markets: list[dict[str, Any]], articles: list[NewsItem]) -> dict[str, Any]:
         compact_markets = [
             {
                 "market": item.get("market"),
@@ -392,7 +422,7 @@ class OpenAIInfoAnalyzer:
                 "summary": "short Korean summary",
             },
         }
-        payload = {
+        return {
             "model": self.model,
             "input": [
                 {
@@ -407,28 +437,46 @@ class OpenAIInfoAnalyzer:
                 },
                 {"role": "user", "content": json.dumps(prompt, ensure_ascii=False)},
             ],
-            "max_output_tokens": 1200,
-        }
-        request = Request(
-            "https://api.openai.com/v1/responses",
-            data=json.dumps(payload).encode("utf-8"),
-            headers={
-                "Authorization": f"Bearer {self.api_key}",
-                "Content-Type": "application/json",
+            "text": {
+                "format": {
+                    "type": "json_schema",
+                    "name": "crypto_news_signal",
+                    "strict": True,
+                    "schema": {
+                        "type": "object",
+                        "additionalProperties": False,
+                        "properties": {
+                            "market_scores": {
+                                "type": "object",
+                                "additionalProperties": {
+                                    "type": "number",
+                                    "minimum": -1,
+                                    "maximum": 1,
+                                },
+                            },
+                            "global_risk_score": {
+                                "type": "number",
+                                "minimum": -1,
+                                "maximum": 1,
+                            },
+                            "blocked_markets": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                            },
+                            "summary": {"type": "string"},
+                        },
+                        "required": [
+                            "market_scores",
+                            "global_risk_score",
+                            "blocked_markets",
+                            "summary",
+                        ],
+                    },
+                }
             },
-            method="POST",
-        )
-        try:
-            with urlopen(request, timeout=self.timeout) as response:
-                data = json.loads(response.read().decode("utf-8"))
-        except Exception as exc:
-            return InfoSignal(article_count=len(articles), errors=[f"OpenAI analysis failed: {exc}"])
-        text = self._extract_text(data)
-        try:
-            parsed = json.loads(_strip_json_fence(text))
-        except json.JSONDecodeError as exc:
-            return InfoSignal(article_count=len(articles), errors=[f"OpenAI JSON parse failed: {exc}"])
-        return self._signal_from_json(parsed, len(articles))
+            "reasoning": {"effort": "low"},
+            "max_output_tokens": 2000,
+        }
 
     def _signal_from_json(self, parsed: dict[str, Any], article_count: int) -> InfoSignal:
         signal = InfoSignal(article_count=article_count)

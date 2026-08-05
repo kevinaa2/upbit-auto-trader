@@ -506,8 +506,25 @@ class IntelligenceTests(unittest.TestCase):
         self.assertEqual(text_format["type"], "json_schema")
         self.assertTrue(text_format["strict"])
         self.assertEqual(text_format["name"], "crypto_news_signal")
+        market_scores_schema = text_format["schema"]["properties"]["market_scores"]
+        self.assertEqual(market_scores_schema["type"], "array")
+        self.assertEqual(market_scores_schema["items"]["required"], ["market", "score"])
         self.assertEqual(payload["reasoning"]["effort"], "low")
         self.assertGreaterEqual(payload["max_output_tokens"], 2000)
+
+    def test_openai_signal_accepts_array_market_scores(self) -> None:
+        analyzer = OpenAIInfoAnalyzer(model="gpt-5-mini")
+        signal = analyzer._signal_from_json(
+            {
+                "market_scores": [{"market": "krw-btc", "score": "0.5"}],
+                "global_risk_score": "0",
+                "blocked_markets": [],
+                "summary": "ok",
+            },
+            1,
+        )
+
+        self.assertEqual(signal.market_scores["KRW-BTC"], Decimal("0.5"))
 
 
 def _restore_env(name: str, value: str | None) -> None:

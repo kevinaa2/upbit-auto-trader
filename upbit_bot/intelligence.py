@@ -8,7 +8,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Any
-from urllib.error import URLError
+from urllib.error import HTTPError, URLError
 from urllib.parse import quote_plus, urlparse
 from urllib.request import Request, urlopen
 from xml.etree import ElementTree
@@ -378,6 +378,11 @@ class OpenAIInfoAnalyzer:
         try:
             with urlopen(request, timeout=self.timeout) as response:
                 data = json.loads(response.read().decode("utf-8"))
+        except HTTPError as exc:
+            return InfoSignal(
+                article_count=len(articles),
+                errors=[f"OpenAI analysis failed: HTTP {exc.code}: {_read_http_error(exc)}"],
+            )
         except Exception as exc:
             return InfoSignal(article_count=len(articles), errors=[f"OpenAI analysis failed: {exc}"])
         text = self._extract_text(data)
@@ -416,7 +421,7 @@ class OpenAIInfoAnalyzer:
             "markets": compact_markets,
             "articles": compact_articles,
             "schema": {
-                "market_scores": {"KRW-BTC": -1.0},
+                "market_scores": [{"market": "KRW-BTC", "score": -1.0}],
                 "global_risk_score": -0.2,
                 "blocked_markets": ["KRW-ABC"],
                 "summary": "short Korean summary",
@@ -447,11 +452,19 @@ class OpenAIInfoAnalyzer:
                         "additionalProperties": False,
                         "properties": {
                             "market_scores": {
-                                "type": "object",
-                                "additionalProperties": {
-                                    "type": "number",
-                                    "minimum": -1,
-                                    "maximum": 1,
+                                "type": "array",
+                                "items": {
+                                    "type": "object",
+                                    "additionalProperties": False,
+                                    "properties": {
+                                        "market": {"type": "string"},
+                                        "score": {
+                                            "type": "number",
+                                            "minimum": -1,
+                                            "maximum": 1,
+                                        },
+                                    },
+                                    "required": ["market", "score"],
                                 },
                             },
                             "global_risk_score": {
@@ -480,7 +493,7 @@ class OpenAIInfoAnalyzer:
 
     def _signal_from_json(self, parsed: dict[str, Any], article_count: int) -> InfoSignal:
         signal = InfoSignal(article_count=article_count)
-        for market, score in dict(parsed.get("market_scores", {})).items():
+        for market, score in _market_score_items(parsed.get("market_scores", [])):
             market_name = str(market).upper()
             signal.market_scores[market_name] = _clamp(Decimal(str(score)), Decimal("-1"), Decimal("1"))
             signal.market_reasons.setdefault(market_name, []).append("openai_news_analysis")
@@ -554,6 +567,29 @@ def _strip_json_fence(text: str) -> str:
         text = re.sub(r"^```(?:json)?", "", text).strip()
         text = re.sub(r"```$", "", text).strip()
     return text
+
+
+def _market_score_items(value: Any) -> list[tuple[str, Any]]:
+    if isinstance(value, dict):
+        return [(str(market), score) for market, score in value.items()]
+    if isinstance(value, list):
+        items: list[tuple[str, Any]] = []
+        for item in value:
+            if not isinstance(item, dict):
+                continue
+            market = item.get("market")
+            score = item.get("score")
+            if market is not None and score is not None:
+                items.append((str(market), score))
+        return items
+    return []
+
+
+def _read_http_error(exc: HTTPError) -> str:
+    raw = exc.read().decode("utf-8", errors="replace")
+    if not raw:
+        return exc.reason
+    return raw[:1000]
 
 
 def _clamp(value: Decimal, low: Decimal, high: Decimal) -> Decimal:

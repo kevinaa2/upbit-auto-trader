@@ -28,6 +28,7 @@ $env:AUTO_ALLOW_FULL_BALANCE="false"
 $env:AI_NEWS_FEEDS=""
 $env:OPENAI_API_KEY=""
 $env:OPENAI_MODEL="gpt-5-mini"
+$env:OPENAI_TIMEOUT_SECONDS="60"
 $env:ALERTS_ENABLED="true"
 $env:TELEGRAM_BOT_TOKEN=""
 $env:TELEGRAM_CHAT_ID=""
@@ -223,6 +224,7 @@ Information scoring:
 - Append extra Google News search queries with `AI_EXTRA_NEWS_QUERIES`, separated by `|`.
 - Keyword analysis is always available and does not require an OpenAI key.
 - OpenAI analysis is optional and only scores the collected articles; the strategy engine still makes the final buy/sell decision.
+- `OPENAI_TIMEOUT_SECONDS` controls how long the bot waits for OpenAI news analysis before treating it as an information error.
 - `--info-weight` controls how strongly information changes market momentum scores.
 - `--info-sell-threshold` controls when negative information triggers a sell or blocks a candidate.
 - `--global-risk-block-threshold` blocks new buys when broad market news risk is too negative.

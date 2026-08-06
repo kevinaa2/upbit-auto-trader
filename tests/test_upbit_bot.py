@@ -561,6 +561,17 @@ class IntelligenceTests(unittest.TestCase):
         self.assertEqual(payload["reasoning"]["effort"], "low")
         self.assertGreaterEqual(payload["max_output_tokens"], 2000)
 
+    def test_openai_analyzer_uses_env_timeout(self) -> None:
+        original_timeout = os.environ.get("OPENAI_TIMEOUT_SECONDS")
+        os.environ["OPENAI_TIMEOUT_SECONDS"] = "75"
+        try:
+            analyzer = OpenAIInfoAnalyzer(model="gpt-5-mini")
+            self.assertEqual(analyzer.timeout, 75.0)
+            explicit = OpenAIInfoAnalyzer(model="gpt-5-mini", timeout=12.0)
+            self.assertEqual(explicit.timeout, 12.0)
+        finally:
+            _restore_env("OPENAI_TIMEOUT_SECONDS", original_timeout)
+
     def test_openai_signal_accepts_array_market_scores(self) -> None:
         analyzer = OpenAIInfoAnalyzer(model="gpt-5-mini")
         signal = analyzer._signal_from_json(

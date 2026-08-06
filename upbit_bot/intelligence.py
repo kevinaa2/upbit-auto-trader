@@ -357,10 +357,10 @@ class KeywordInfoAnalyzer:
 
 
 class OpenAIInfoAnalyzer:
-    def __init__(self, model: str | None = None, timeout: float = 20.0) -> None:
+    def __init__(self, model: str | None = None, timeout: float | None = None) -> None:
         self.api_key = os.getenv("OPENAI_API_KEY", "").strip()
         self.model = model or os.getenv("OPENAI_MODEL", "gpt-5-mini").strip()
-        self.timeout = timeout
+        self.timeout = timeout if timeout is not None else _env_float("OPENAI_TIMEOUT_SECONDS", 60.0)
 
     def analyze(self, markets: list[dict[str, Any]], articles: list[NewsItem]) -> InfoSignal:
         if not self.api_key:
@@ -567,6 +567,19 @@ def _strip_json_fence(text: str) -> str:
         text = re.sub(r"^```(?:json)?", "", text).strip()
         text = re.sub(r"```$", "", text).strip()
     return text
+
+
+def _env_float(name: str, default: float) -> float:
+    raw = os.getenv(name, "").strip()
+    if not raw:
+        return default
+    try:
+        value = float(raw)
+    except ValueError:
+        return default
+    if value <= 0:
+        return default
+    return value
 
 
 def _market_score_items(value: Any) -> list[tuple[str, Any]]:

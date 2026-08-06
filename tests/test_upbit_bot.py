@@ -352,17 +352,38 @@ class AutoTraderTests(unittest.TestCase):
         )
 
         self.assertIsNotNone(candidate)
+        signal = InfoSignal(article_count=5, market_scores={"KRW-BADNEWS": Decimal("-0.2")})
         self.assertEqual(
-            auto.new_buy_block_reason(candidate, InfoSignal(article_count=5), AutoConfig()),
+            auto.new_buy_block_reason(candidate, signal, AutoConfig()),
             "candidate_info_below_minimum",
         )
         self.assertIsNone(
             auto.new_buy_block_reason(
                 candidate,
-                InfoSignal(article_count=5),
+                signal,
                 AutoConfig(min_info_score_for_buy=Decimal("-0.3")),
             )
         )
+
+    def test_new_buy_allows_mild_negative_global_risk_without_candidate_bad_news(self) -> None:
+        auto = AutoTrader(self.settings())
+        signal = InfoSignal(article_count=5, global_risk_score=Decimal("-0.4"))
+        candidate = auto.select_candidate(
+            [
+                {
+                    "market": "KRW-MOMENTUM",
+                    "signed_change_rate": "0.03",
+                    "acc_trade_price_24h": "10000000000",
+                    "trade_price": "100",
+                }
+            ],
+            AutoConfig(min_change_rate=Decimal("0.01")),
+            signal,
+        )
+
+        self.assertIsNotNone(candidate)
+        self.assertEqual(candidate.info_score, Decimal("-0.4"))
+        self.assertIsNone(auto.new_buy_block_reason(candidate, signal, AutoConfig()))
 
     def test_run_once_rebuys_after_live_sell_refreshes_balances(self) -> None:
         settings = self.settings(allow_full_balance=True)

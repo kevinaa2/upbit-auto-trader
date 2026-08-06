@@ -64,8 +64,9 @@ To require more confirmation articles:
 
   python -m upbit_bot run-auto --min-info-articles-for-buy 3
 
-New buys are also blocked when the top candidate's information score is negative
-by default. To make that stricter or looser:
+New buys are also blocked when the top candidate's direct market information
+score is negative by default. Mild negative global risk still discounts the score
+but does not block buys by itself. To make that stricter or looser:
 
   python -m upbit_bot run-auto --min-info-score-for-buy 0.2
 

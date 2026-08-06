@@ -382,7 +382,10 @@ class AutoTrader:
             return "information_errors"
         if info_signal.article_count < config.min_info_articles_for_buy:
             return "not_enough_information"
-        if candidate is not None and candidate.info_score < config.min_info_score_for_buy:
+        if (
+            candidate is not None
+            and info_signal.market_scores.get(candidate.market, Decimal("0")) < config.min_info_score_for_buy
+        ):
             return "candidate_info_below_minimum"
         return None
 

@@ -159,8 +159,25 @@ class NewsCollector:
 
     def collect(self, limit: int = 40) -> list[NewsItem]:
         feeds = self._feed_urls()
+        return self._collect_from_feeds(feeds, limit)
+
+    def collect_for_markets(self, markets: list[dict[str, Any]], limit_per_market: int = 5) -> list[NewsItem]:
+        feeds: list[str] = []
+        for item in markets:
+            query = self._market_news_query(item)
+            if query:
+                feeds.append(
+                    "https://news.google.com/rss/search?q="
+                    + quote_plus(query)
+                    + "&hl=ko&gl=KR&ceid=KR:ko"
+                )
+        return self._collect_from_feeds(feeds, max(0, len(markets) * limit_per_market))
+
+    def _collect_from_feeds(self, feeds: list[str], limit: int) -> list[NewsItem]:
         items: list[NewsItem] = []
         seen: set[str] = set()
+        if limit <= 0:
+            return items
         for feed in feeds:
             try:
                 for item in self._read_feed(feed):
@@ -174,6 +191,20 @@ class NewsCollector:
             except Exception:
                 continue
         return items
+
+    def _market_news_query(self, market: dict[str, Any]) -> str:
+        market_name = str(market.get("market", "")).upper()
+        if "-" not in market_name:
+            return ""
+        symbol = market_name.split("-", 1)[1]
+        terms = [symbol]
+        korean = str(market.get("korean_name", "")).strip()
+        english = str(market.get("english_name", "")).strip()
+        if korean:
+            terms.append(f'"{korean}"')
+        if english:
+            terms.append(f'"{english}"')
+        return f"({' OR '.join(terms)}) (crypto OR coin OR 가상자산 OR 코인 OR 업비트) when:7d"
 
     def _feed_urls(self) -> list[str]:
         raw = os.getenv("AI_NEWS_FEEDS", "").strip()
@@ -531,6 +562,22 @@ class IntelligenceEngine:
             signal.merge(self.openai_analyzer.analyze(markets, articles))
         if not signal.summary:
             signal.summary = f"Analyzed {len(articles)} articles at {started_at}."
+        return signal
+
+    def evaluate_for_markets(
+        self,
+        markets: list[dict[str, Any]],
+        articles_per_market: int = 5,
+    ) -> InfoSignal:
+        started_at = datetime.now(timezone.utc).isoformat()
+        articles = self.collector.collect_for_markets(markets, limit_per_market=articles_per_market)
+        signal = self.keyword_analyzer.analyze(markets, articles)
+        if self.openai_analyzer is not None and articles:
+            signal.merge(self.openai_analyzer.analyze(markets, articles))
+        signal.global_risk_score = Decimal("0")
+        if not signal.summary:
+            names = ", ".join(str(item.get("market", "")) for item in markets[:10])
+            signal.summary = f"Analyzed {len(articles)} candidate articles for {names} at {started_at}."
         return signal
 
 

@@ -70,6 +70,12 @@ but does not block buys by itself. To make that stricter or looser:
 
   python -m upbit_bot run-auto --min-info-score-for-buy 0.2
 
+Before final selection, the bot does a second news search for the strongest
+momentum candidates. By default it checks 5 candidates and up to 5 extra articles
+per candidate:
+
+  python -m upbit_bot run-auto --candidate-news-markets 5 --candidate-news-articles-per-market 5
+
 Run live auto trading with OpenAI news analysis:
 
   python -m upbit_bot run-auto --live --yes --allow-full-balance --cash-usage-percent 100 --interval-seconds 600 --use-openai-info

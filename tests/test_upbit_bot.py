@@ -86,6 +86,69 @@ class FakeIntelligence:
         return InfoSignal(article_count=1, summary="ok")
 
 
+class FakeCandidateNewsIntelligence:
+    def __init__(self) -> None:
+        self.candidate_markets: list[str] = []
+
+    def evaluate(self, markets: list[dict[str, object]], limit: int = 40) -> InfoSignal:
+        return InfoSignal(article_count=1, summary="broad")
+
+    def evaluate_for_markets(
+        self,
+        markets: list[dict[str, object]],
+        articles_per_market: int = 5,
+    ) -> InfoSignal:
+        self.candidate_markets = [str(item["market"]) for item in markets]
+        return InfoSignal(
+            article_count=articles_per_market * len(markets),
+            market_scores={"KRW-SECOND": Decimal("0.8")},
+            summary="candidate",
+        )
+
+
+class FakeCandidateApi:
+    def __init__(self, settings: Settings) -> None:
+        self.settings = settings
+        self.buy_orders: list[tuple[str, str, bool, bool]] = []
+
+    def markets(self, quote: str, include_warnings: bool) -> UpbitResponse:
+        return UpbitResponse(
+            [
+                {"market": "KRW-FIRST", "korean_name": "First", "english_name": "First"},
+                {"market": "KRW-SECOND", "korean_name": "Second", "english_name": "Second"},
+            ],
+            200,
+            None,
+        )
+
+    def tickers(self, markets: list[str]) -> UpbitResponse:
+        return UpbitResponse(
+            [
+                {
+                    "market": "KRW-FIRST",
+                    "signed_change_rate": "0.030",
+                    "acc_trade_price_24h": "1000000",
+                    "trade_price": "100",
+                },
+                {
+                    "market": "KRW-SECOND",
+                    "signed_change_rate": "0.029",
+                    "acc_trade_price_24h": "1000000",
+                    "trade_price": "100",
+                },
+            ],
+            200,
+            None,
+        )
+
+    def balances(self) -> UpbitResponse:
+        return UpbitResponse([{"currency": "KRW", "balance": "10000"}], 200, None)
+
+    def market_buy(self, market: str, krw: str, live: bool, yes: bool) -> UpbitResponse:
+        self.buy_orders.append((market, krw, live, yes))
+        return UpbitResponse({"uuid": "buy-uuid"}, 201, None)
+
+
 class UpbitClientTests(unittest.TestCase):
     def test_jwt_contains_three_segments(self) -> None:
         client = UpbitClient("access", "secret")
@@ -385,6 +448,26 @@ class AutoTraderTests(unittest.TestCase):
         self.assertEqual(candidate.info_score, Decimal("-0.4"))
         self.assertIsNone(auto.new_buy_block_reason(candidate, signal, AutoConfig()))
 
+    def test_run_once_uses_candidate_news_to_rerank_top_candidate(self) -> None:
+        settings = self.settings()
+        fake_trader = FakeCandidateApi(settings)
+        intelligence = FakeCandidateNewsIntelligence()
+        auto = AutoTrader(settings, fake_trader, intelligence)  # type: ignore[arg-type]
+
+        summary = auto.run_once(
+            AutoConfig(
+                cash_usage_percent=Decimal("100"),
+                min_change_rate=Decimal("0.01"),
+                min_24h_volume=Decimal("1000"),
+                candidate_news_markets=2,
+                candidate_news_articles_per_market=3,
+            )
+        )
+
+        self.assertEqual(intelligence.candidate_markets, ["KRW-FIRST", "KRW-SECOND"])
+        self.assertEqual(summary["candidate"]["market"], "KRW-SECOND")
+        self.assertEqual(fake_trader.buy_orders[0][0], "KRW-SECOND")
+
     def test_run_once_rebuys_after_live_sell_refreshes_balances(self) -> None:
         settings = self.settings(allow_full_balance=True)
         fake_trader = FakeAutoTraderApi(settings)
@@ -518,6 +601,17 @@ class IntelligenceTests(unittest.TestCase):
             _restore_env("AI_EXTRA_NEWS_QUERIES", original_queries)
             _restore_env("AI_NEWS_FEEDS", original_override_feeds)
             _restore_env("AI_NEWS_QUERIES", original_override_queries)
+
+    def test_news_collector_builds_candidate_market_query(self) -> None:
+        collector = NewsCollector()
+        query = collector._market_news_query(
+            {"market": "KRW-SOL", "korean_name": "솔라나", "english_name": "Solana"}
+        )
+
+        self.assertIn("SOL", query)
+        self.assertIn("\"솔라나\"", query)
+        self.assertIn("\"Solana\"", query)
+        self.assertIn("when:7d", query)
 
     def test_keyword_analyzer_scores_market_news(self) -> None:
         analyzer = KeywordInfoAnalyzer()

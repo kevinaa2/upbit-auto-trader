@@ -188,6 +188,7 @@ Auto trader defaults:
 - Collects crypto news from RSS feeds and adjusts candidate scores with external information.
 - Blocks new buys when information collection has errors or fewer than `--min-info-articles-for-buy 1` articles.
 - Blocks new buys when the top candidate's direct market information score is below `--min-info-score-for-buy 0`.
+- Rechecks the top `--candidate-news-markets 5` momentum candidates with up to `--candidate-news-articles-per-market 5` extra candidate-specific news articles before final selection.
 - Can optionally call the OpenAI Responses API when `--use-openai-info` and `OPENAI_API_KEY` are set.
 - Sells on `--stop-loss-rate`, trailing take-profit, optional `--take-profit-rate`, or rotation to a stronger candidate.
 - Refreshes balances after a live sell, so a replacement buy can happen in the same cycle when cash is available.
@@ -231,6 +232,7 @@ Information scoring:
 - `--max-change-rate` avoids chasing sudden 24h price spikes; use `0` to disable it.
 - `--overheat-info-threshold` allows an overheated candidate only when matched news/AI information is strongly positive.
 - `--min-info-articles-for-buy` controls how many collected articles are required before new buys are allowed.
+- `--candidate-news-markets` and `--candidate-news-articles-per-market` control the second-pass news search for top momentum candidates.
 - The strategy combines market score and information score. Market score comes from 24h volume-adjusted positive momentum, while information score comes from matched news and optional OpenAI analysis.
 
 Example extra sources:

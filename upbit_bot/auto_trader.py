@@ -42,6 +42,8 @@ class AutoConfig:
     info_sell_threshold: Decimal = Decimal("-0.70")
     global_risk_block_threshold: Decimal = Decimal("-0.80")
     info_article_limit: int = 80
+    candidate_news_markets: int = 5
+    candidate_news_articles_per_market: int = 5
     min_info_articles_for_buy: int = 1
     min_info_score_for_buy: Decimal = Decimal("0")
     include_warnings: bool = False
@@ -136,6 +138,14 @@ class AutoTrader:
         tickers = self._load_tickers(markets)
         ticker_by_market = {item["market"]: item for item in tickers}
         info_signal = self._load_info_signal(market_items, config)
+        preliminary_candidates = self.select_candidates(
+            tickers,
+            config,
+            info_signal,
+            limit=config.candidate_news_markets,
+        )
+        if preliminary_candidates:
+            info_signal.merge(self._load_candidate_info_signal(market_items, preliminary_candidates, config))
         candidate = self.select_candidate(tickers, config, info_signal)
 
         balances = self.trader.balances().data
@@ -203,8 +213,22 @@ class AutoTrader:
         config: AutoConfig,
         info_signal: InfoSignal | None = None,
     ) -> Candidate | None:
+        candidates = self.select_candidates(tickers, config, info_signal, limit=1)
+        if not candidates:
+            return None
+        return candidates[0]
+
+    def select_candidates(
+        self,
+        tickers: list[dict[str, Any]],
+        config: AutoConfig,
+        info_signal: InfoSignal | None = None,
+        limit: int = 5,
+    ) -> list[Candidate]:
         info_signal = info_signal or InfoSignal()
         candidates: list[Candidate] = []
+        if limit <= 0:
+            return candidates
         for item in tickers:
             market = str(item["market"])
             change_rate = self._decimal(item.get("signed_change_rate", "0"))
@@ -242,9 +266,7 @@ class AutoTrader:
                     reasons=info_signal.market_reasons.get(market, [])[:5],
                 )
             )
-        if not candidates:
-            return None
-        return max(candidates, key=lambda candidate: candidate.score)
+        return sorted(candidates, key=lambda candidate: candidate.score, reverse=True)[:limit]
 
     def positions(
         self,
@@ -438,6 +460,35 @@ class AutoTrader:
         except Exception as exc:
             return InfoSignal(errors=[f"information analysis failed: {exc}"])
 
+    def _load_candidate_info_signal(
+        self,
+        market_items: list[dict[str, Any]],
+        candidates: list[Candidate],
+        config: AutoConfig,
+    ) -> InfoSignal:
+        if not config.use_info or config.candidate_news_markets <= 0:
+            return InfoSignal()
+        engine = self.intelligence or IntelligenceEngine(use_openai=config.use_openai_info)
+        if not hasattr(engine, "evaluate_for_markets"):
+            return InfoSignal()
+        market_by_name = {str(item.get("market", "")).upper(): item for item in market_items}
+        candidate_items = [
+            market_by_name[candidate.market]
+            for candidate in candidates[: config.candidate_news_markets]
+            if candidate.market in market_by_name
+        ]
+        if not candidate_items:
+            return InfoSignal()
+        try:
+            signal = engine.evaluate_for_markets(
+                candidate_items,
+                articles_per_market=config.candidate_news_articles_per_market,
+            )
+            signal.errors = []
+            return signal
+        except Exception as exc:
+            return InfoSignal(summary=f"Candidate information analysis skipped: {exc}")
+
     def _validate_config(self, config: AutoConfig) -> None:
         if config.live:
             if not config.yes:
@@ -460,6 +511,10 @@ class AutoTrader:
             raise ValueError("--interval-seconds must be at least 5")
         if config.info_article_limit < 1:
             raise ValueError("--info-article-limit must be at least 1")
+        if config.candidate_news_markets < 0:
+            raise ValueError("--candidate-news-markets must be 0 or greater")
+        if config.candidate_news_articles_per_market < 0:
+            raise ValueError("--candidate-news-articles-per-market must be 0 or greater")
         if config.min_info_articles_for_buy < 0:
             raise ValueError("--min-info-articles-for-buy must be 0 or greater")
         if config.min_info_score_for_buy < -1 or config.min_info_score_for_buy > 1:

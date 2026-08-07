@@ -26,7 +26,7 @@ class AutoConfig:
     max_change_rate: Decimal = Decimal("0.12")
     overheat_info_threshold: Decimal = Decimal("0.50")
     min_24h_volume: Decimal = Decimal("1000000000")
-    stop_loss_rate: Decimal = Decimal("-0.02")
+    stop_loss_rate: Decimal = Decimal("-0.05")
     take_profit_rate: Decimal = Decimal("0")
     trailing_start_rate: Decimal = Decimal("0.04")
     trailing_stop_rate_1: Decimal = Decimal("0.03")
@@ -35,6 +35,7 @@ class AutoConfig:
     trailing_tier_2_rate: Decimal = Decimal("0.08")
     trailing_tier_3_rate: Decimal = Decimal("0.15")
     rotation_margin_rate: Decimal = Decimal("0.01")
+    rotation_min_pnl_rate: Decimal = Decimal("0")
     fee_buffer_rate: Decimal = Decimal("0.001")
     use_info: bool = True
     use_openai_info: bool = False
@@ -388,6 +389,8 @@ class AutoTrader:
             Decimal("0"),
             Decimal("1") + (position.info_score * config.info_weight),
         )
+        if position.pnl_rate is None or position.pnl_rate < config.rotation_min_pnl_rate:
+            return None
         if candidate.score > position_score * (Decimal("1") + config.rotation_margin_rate):
             return "rotate_to_stronger_candidate"
         return None
@@ -519,6 +522,8 @@ class AutoTrader:
             raise ValueError("--min-info-articles-for-buy must be 0 or greater")
         if config.min_info_score_for_buy < -1 or config.min_info_score_for_buy > 1:
             raise ValueError("--min-info-score-for-buy must be between -1 and 1")
+        if config.rotation_min_pnl_rate < -1 or config.rotation_min_pnl_rate > 1:
+            raise ValueError("--rotation-min-pnl-rate must be between -1 and 1")
         if config.alert_heartbeat_cycles < 0:
             raise ValueError("--alert-heartbeat-cycles must be 0 or greater")
         if config.trailing_start_rate < 0:

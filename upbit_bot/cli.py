@@ -56,7 +56,7 @@ def build_parser() -> argparse.ArgumentParser:
     auto.add_argument("--max-change-rate", default="0.12")
     auto.add_argument("--overheat-info-threshold", default="0.50")
     auto.add_argument("--min-24h-volume", default="1000000000")
-    auto.add_argument("--stop-loss-rate", default="-0.02")
+    auto.add_argument("--stop-loss-rate", default="-0.05")
     auto.add_argument("--take-profit-rate", default="0")
     auto.add_argument("--trailing-start-rate", default="0.04")
     auto.add_argument("--trailing-stop-rate-1", default="0.03")
@@ -65,6 +65,7 @@ def build_parser() -> argparse.ArgumentParser:
     auto.add_argument("--trailing-tier-2-rate", default="0.08")
     auto.add_argument("--trailing-tier-3-rate", default="0.15")
     auto.add_argument("--rotation-margin-rate", default="0.01")
+    auto.add_argument("--rotation-min-pnl-rate", default="0")
     auto.add_argument("--fee-buffer-rate", default="0.001")
     auto.add_argument("--no-info", action="store_true", help="Disable external news/RSS information scoring.")
     auto.add_argument("--use-openai-info", action="store_true", help="Use OpenAI API to analyze collected news.")
@@ -157,6 +158,7 @@ def _dispatch(args: argparse.Namespace, trader: Trader) -> UpbitResponse | Order
             trailing_tier_2_rate=Decimal(args.trailing_tier_2_rate),
             trailing_tier_3_rate=Decimal(args.trailing_tier_3_rate),
             rotation_margin_rate=Decimal(args.rotation_margin_rate),
+            rotation_min_pnl_rate=Decimal(args.rotation_min_pnl_rate),
             fee_buffer_rate=Decimal(args.fee_buffer_rate),
             use_info=not args.no_info,
             use_openai_info=args.use_openai_info,

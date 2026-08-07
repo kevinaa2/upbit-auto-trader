@@ -190,7 +190,8 @@ Auto trader defaults:
 - Blocks new buys when the top candidate's direct market information score is below `--min-info-score-for-buy 0`.
 - Rechecks the top `--candidate-news-markets 5` momentum candidates with up to `--candidate-news-articles-per-market 5` extra candidate-specific news articles before final selection.
 - Can optionally call the OpenAI Responses API when `--use-openai-info` and `OPENAI_API_KEY` are set.
-- Sells on `--stop-loss-rate`, trailing take-profit, optional `--take-profit-rate`, or rotation to a stronger candidate.
+- Sells on `--stop-loss-rate -0.05`, trailing take-profit, optional `--take-profit-rate`, or rotation to a stronger candidate.
+- Rotation to a stronger candidate is only allowed when current PnL is at least `--rotation-min-pnl-rate 0` by default.
 - Refreshes balances after a live sell, so a replacement buy can happen in the same cycle when cash is available.
 - Sells when strong negative external information is detected for the held market.
 - Blocks new buys when global crypto news risk is too negative.
@@ -202,6 +203,8 @@ Auto trader defaults:
 Trailing take-profit defaults:
 
 - Fixed take-profit is disabled by default with `--take-profit-rate 0`.
+- Fixed stop-loss is `--stop-loss-rate -0.05`, meaning roughly -5% from average buy price.
+- Rotation sells are disabled while the current position is losing unless `--rotation-min-pnl-rate` is lowered.
 - Trailing starts after `--trailing-start-rate 0.04`, meaning roughly +4% profit.
 - From +4% to +8%, sell if price falls 3% from the observed peak.
 - From +8% to +15%, sell if price falls 4% from the observed peak.

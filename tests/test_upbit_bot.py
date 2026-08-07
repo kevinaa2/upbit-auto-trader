@@ -6,7 +6,7 @@ from decimal import Decimal
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from upbit_bot.auto_trader import AutoConfig, AutoTrader, Position
+from upbit_bot.auto_trader import AutoConfig, AutoTrader, Candidate, Position
 from upbit_bot.config import Settings, load_dotenv
 from upbit_bot.intelligence import InfoSignal, KeywordInfoAnalyzer, NewsCollector, NewsItem, OpenAIInfoAnalyzer
 from upbit_bot.notifier import Notification, Notifier
@@ -549,6 +549,65 @@ class AutoTraderTests(unittest.TestCase):
         self.assertEqual(
             auto.sell_reason(position, None, AutoConfig()),
             "trailing_take_profit",
+        )
+
+    def test_rotation_does_not_sell_losing_position_by_default(self) -> None:
+        auto = AutoTrader(self.settings())
+        position = Position(
+            market="KRW-OLD",
+            currency="OLD",
+            balance=Decimal("1"),
+            avg_buy_price=Decimal("100"),
+            current_price=Decimal("99"),
+            value_krw=Decimal("99000"),
+            momentum_score=Decimal("1000"),
+            info_score=Decimal("0"),
+            peak_price=Decimal("100"),
+            trailing_stop_price=None,
+            pnl_rate=Decimal("-0.01"),
+        )
+        candidate = Candidate(
+            market="KRW-NEW",
+            score=Decimal("5000"),
+            market_score=Decimal("5000"),
+            info_score=Decimal("0"),
+            change_rate=Decimal("0.05"),
+            volume_24h=Decimal("100000"),
+            trade_price=Decimal("10"),
+            reasons=[],
+        )
+
+        self.assertIsNone(auto.sell_reason(position, candidate, AutoConfig()))
+
+    def test_rotation_can_sell_profitable_position(self) -> None:
+        auto = AutoTrader(self.settings())
+        position = Position(
+            market="KRW-OLD",
+            currency="OLD",
+            balance=Decimal("1"),
+            avg_buy_price=Decimal("100"),
+            current_price=Decimal("101"),
+            value_krw=Decimal("101000"),
+            momentum_score=Decimal("1000"),
+            info_score=Decimal("0"),
+            peak_price=Decimal("101"),
+            trailing_stop_price=None,
+            pnl_rate=Decimal("0.01"),
+        )
+        candidate = Candidate(
+            market="KRW-NEW",
+            score=Decimal("5000"),
+            market_score=Decimal("5000"),
+            info_score=Decimal("0"),
+            change_rate=Decimal("0.05"),
+            volume_24h=Decimal("100000"),
+            trade_price=Decimal("10"),
+            reasons=[],
+        )
+
+        self.assertEqual(
+            auto.sell_reason(position, candidate, AutoConfig()),
+            "rotate_to_stronger_candidate",
         )
 
     def test_apply_position_state_keeps_highest_observed_price(self) -> None:

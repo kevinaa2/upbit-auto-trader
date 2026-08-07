@@ -76,9 +76,18 @@ per candidate:
 
   python -m upbit_bot run-auto --candidate-news-markets 5 --candidate-news-articles-per-market 5
 
+Sell defaults are intentionally less jumpy:
+
+  stop-loss: -5%
+  rotation to a stronger candidate: only when current PnL is at least 0%
+
+To adjust:
+
+  python -m upbit_bot run-auto --stop-loss-rate -0.05 --rotation-min-pnl-rate 0
+
 Run live auto trading with OpenAI news analysis:
 
-  python -m upbit_bot run-auto --live --yes --allow-full-balance --cash-usage-percent 100 --interval-seconds 600 --use-openai-info
+  python -m upbit_bot run-auto --live --yes --allow-full-balance --cash-usage-percent 100 --interval-seconds 600 --use-openai-info --stop-loss-rate -0.05 --rotation-min-pnl-rate 0
 
 Live auto trading also requires these .env values:
 
@@ -117,7 +126,7 @@ Continuous 10-minute dry-run Parameters:
 
 Live auto trading Parameters:
 
-  run-auto --live --yes --allow-full-balance --cash-usage-percent 100 --interval-seconds 600 --use-openai-info --min-info-score-for-buy 0
+  run-auto --live --yes --allow-full-balance --cash-usage-percent 100 --interval-seconds 600 --use-openai-info --min-info-score-for-buy 0 --stop-loss-rate -0.05 --rotation-min-pnl-rate 0
 
 
 4. Run the status web

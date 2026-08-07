@@ -224,6 +224,7 @@ Information scoring:
 - Default RSS sources include CoinDesk, Cointelegraph, Cointelegraph Korea, Decrypt, and Google News searches.
 - Google News searches include broad crypto news, hack/exploit/delisting risk, ETF/SEC news, major altcoin news, Korean crypto terms, Upbit notices, Bithumb notices, and Coinone notices.
 - Korean source searches also include TokenPost, Blockmedia, Digital Asset, Decenter, CoinReaders, Coinness, and ZDNet Korea.
+- Collected articles are filtered before scoring, so company, stock, product, person, or acronym matches are ignored unless the article has clear crypto, token, blockchain, or exchange-listing context.
 - Override all RSS sources with comma-separated RSS URLs in `AI_NEWS_FEEDS`.
 - Append extra RSS sources with comma-separated RSS URLs in `AI_EXTRA_NEWS_FEEDS`.
 - Override Google News search queries with `AI_NEWS_QUERIES`, separated by `|`.

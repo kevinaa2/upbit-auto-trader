@@ -106,6 +106,50 @@ CRITICAL_KEYWORDS = {
     "\uc0ac\uae30",
 }
 
+CRYPTO_CONTEXT_TERMS = {
+    "crypto",
+    "cryptocurrency",
+    "bitcoin",
+    "ethereum",
+    "blockchain",
+    "token",
+    "coin",
+    "altcoin",
+    "web3",
+    "defi",
+    "nft",
+    "upbit",
+    "bithumb",
+    "coinone",
+    "exchange listing",
+    "krw market",
+    "\uc554\ud638\ud654\ud3d0",
+    "\uac00\uc0c1\uc790\uc0b0",
+    "\ube44\ud2b8\ucf54\uc778",
+    "\uc774\ub354\ub9ac\uc6c0",
+    "\ube14\ub85d\uccb4\uc778",
+    "\ud1a0\ud070",
+    "\uc54c\ud2b8\ucf54\uc778",
+    "\uc5c5\ube44\ud2b8",
+    "\ube57\uc378",
+    "\ucf54\uc778\uc6d0",
+    "\uac70\ub798\uc9c0\uc6d0",
+    "\uc6d0\ud654\ub9c8\ucf13",
+}
+
+TRUSTED_CRYPTO_SOURCES = {
+    "coindesk.com",
+    "cointelegraph.com",
+    "kr.cointelegraph.com",
+    "decrypt.co",
+    "tokenpost.kr",
+    "blockmedia.co.kr",
+    "digitalasset.works",
+    "decenter.kr",
+    "coinreaders.com",
+    "coinness.com",
+}
+
 
 @dataclass(frozen=True)
 class NewsItem:
@@ -197,7 +241,7 @@ class NewsCollector:
         if "-" not in market_name:
             return ""
         symbol = market_name.split("-", 1)[1]
-        terms = [symbol]
+        terms = [f'"{symbol}"']
         korean = str(market.get("korean_name", "")).strip()
         english = str(market.get("english_name", "")).strip()
         if korean:
@@ -306,6 +350,9 @@ class KeywordInfoAnalyzer:
                     )
                 continue
 
+            if not self._has_crypto_context(article, normalized):
+                continue
+
             reason = self._reason(article, base_score)
             for market in mentioned:
                 signal.market_scores[market] = _clamp(
@@ -317,6 +364,23 @@ class KeywordInfoAnalyzer:
                 if self._has_critical_keyword(normalized):
                     signal.blocked_markets.add(market)
         return signal
+
+    def filter_relevant_articles(
+        self,
+        markets: list[dict[str, Any]],
+        articles: list[NewsItem],
+        require_market_match: bool = False,
+    ) -> list[NewsItem]:
+        term_map = self._market_terms(markets)
+        relevant: list[NewsItem] = []
+        for article in articles:
+            normalized = article.text().lower()
+            if not self._has_crypto_context(article, normalized):
+                continue
+            if require_market_match and not self._mentioned_markets(normalized, term_map):
+                continue
+            relevant.append(article)
+        return relevant
 
     def _market_terms(self, markets: list[dict[str, Any]]) -> dict[str, set[str]]:
         term_map: dict[str, set[str]] = {}
@@ -370,18 +434,14 @@ class KeywordInfoAnalyzer:
         return f"{label}: {article.source}: {article.title[:160]}"
 
     def _looks_like_crypto_news(self, text: str) -> bool:
-        return any(
-            term in text
-            for term in [
-                "crypto",
-                "bitcoin",
-                "ethereum",
-                "coin",
-                "\uc554\ud638\ud654\ud3d0",
-                "\ube44\ud2b8\ucf54\uc778",
-                "\ucf54\uc778",
-            ]
-        )
+        return any(term in text for term in CRYPTO_CONTEXT_TERMS)
+
+    def _has_crypto_context(self, article: NewsItem, text: str) -> bool:
+        return self._looks_like_crypto_news(text) or self._is_trusted_crypto_source(article.source)
+
+    def _is_trusted_crypto_source(self, source: str) -> bool:
+        normalized = source.lower().removeprefix("www.")
+        return any(normalized == domain or normalized.endswith(f".{domain}") for domain in TRUSTED_CRYPTO_SOURCES)
 
     def _has_critical_keyword(self, text: str) -> bool:
         return any(keyword in text for keyword in CRITICAL_KEYWORDS)
@@ -468,6 +528,10 @@ class OpenAIInfoAnalyzer:
                         "Return only valid JSON. Scores must be between -1 and 1. "
                         "Use negative scores for hacks, lawsuits, delistings, exchange warnings, or regulation risk. "
                         "Use positive scores for listings, credible adoption, mainnet upgrades, partnerships, or ETF approvals. "
+                        "Score a market only when the article is clearly about that crypto asset, token, project, "
+                        "or an exchange listing for it. Ignore ambiguous ticker/name matches, market-cap references, "
+                        "companies, stocks, products, people, or acronyms unless the article explicitly links them "
+                        "to a crypto asset in the provided market list. Global risk must only reflect crypto-market news. "
                         "Do not invent facts beyond the provided articles."
                     ),
                 },
@@ -556,12 +620,13 @@ class IntelligenceEngine:
 
     def evaluate(self, markets: list[dict[str, Any]], limit: int = 40) -> InfoSignal:
         started_at = datetime.now(timezone.utc).isoformat()
-        articles = self.collector.collect(limit=limit)
+        collected_articles = self.collector.collect(limit=limit * 2)
+        articles = self.keyword_analyzer.filter_relevant_articles(markets, collected_articles)[:limit]
         signal = self.keyword_analyzer.analyze(markets, articles)
         if self.openai_analyzer is not None and articles:
             signal.merge(self.openai_analyzer.analyze(markets, articles))
         if not signal.summary:
-            signal.summary = f"Analyzed {len(articles)} articles at {started_at}."
+            signal.summary = f"Analyzed {len(articles)} filtered crypto articles at {started_at}."
         return signal
 
     def evaluate_for_markets(
@@ -570,14 +635,19 @@ class IntelligenceEngine:
         articles_per_market: int = 5,
     ) -> InfoSignal:
         started_at = datetime.now(timezone.utc).isoformat()
-        articles = self.collector.collect_for_markets(markets, limit_per_market=articles_per_market)
+        collected_articles = self.collector.collect_for_markets(markets, limit_per_market=articles_per_market * 2)
+        articles = self.keyword_analyzer.filter_relevant_articles(
+            markets,
+            collected_articles,
+            require_market_match=True,
+        )[: max(0, len(markets) * articles_per_market)]
         signal = self.keyword_analyzer.analyze(markets, articles)
         if self.openai_analyzer is not None and articles:
             signal.merge(self.openai_analyzer.analyze(markets, articles))
         signal.global_risk_score = Decimal("0")
         if not signal.summary:
             names = ", ".join(str(item.get("market", "")) for item in markets[:10])
-            signal.summary = f"Analyzed {len(articles)} candidate articles for {names} at {started_at}."
+            signal.summary = f"Analyzed {len(articles)} filtered candidate crypto articles for {names} at {started_at}."
         return signal
 
 

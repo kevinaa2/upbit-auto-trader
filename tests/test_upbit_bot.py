@@ -8,7 +8,13 @@ from tempfile import TemporaryDirectory
 
 from upbit_bot.auto_trader import AutoConfig, AutoTrader, Candidate, Position
 from upbit_bot.config import Settings, load_dotenv
-from upbit_bot.intelligence import InfoSignal, KeywordInfoAnalyzer, NewsCollector, NewsItem, OpenAIInfoAnalyzer
+from upbit_bot.intelligence import (
+    InfoSignal,
+    KeywordInfoAnalyzer,
+    NewsCollector,
+    NewsItem,
+    OpenAIInfoAnalyzer,
+)
 from upbit_bot.notifier import Notification, Notifier
 from upbit_bot.status_web import build_status, read_recent_events
 from upbit_bot.trader import OrderPlan, Trader
@@ -752,6 +758,41 @@ class IntelligenceTests(unittest.TestCase):
         self.assertLess(signal.market_scores["KRW-BTC"], Decimal("0"))
         self.assertIn("KRW-BTC", signal.blocked_markets)
 
+    def test_keyword_analyzer_ignores_ambiguous_non_crypto_market_mentions(self) -> None:
+        analyzer = KeywordInfoAnalyzer()
+        signal = analyzer.analyze(
+            [{"market": "KRW-CAP", "korean_name": "Cap", "english_name": "Cap"}],
+            [
+                NewsItem(
+                    title="CAP manufacturing company announces partnership approval",
+                    link="https://example.test/company-cap",
+                    source="example.test",
+                )
+            ],
+        )
+
+        self.assertNotIn("KRW-CAP", signal.market_scores)
+
+    def test_keyword_filter_requires_candidate_market_and_crypto_context(self) -> None:
+        analyzer = KeywordInfoAnalyzer()
+        markets = [{"market": "KRW-CAP", "korean_name": "Cap", "english_name": "Cap"}]
+        articles = [
+            NewsItem(
+                title="CAP manufacturing company announces partnership approval",
+                link="https://example.test/company-cap",
+                source="example.test",
+            ),
+            NewsItem(
+                title="CAP token listed on Upbit KRW market",
+                link="https://example.test/cap-token",
+                source="example.test",
+            ),
+        ]
+
+        filtered = analyzer.filter_relevant_articles(markets, articles, require_market_match=True)
+
+        self.assertEqual([item.link for item in filtered], ["https://example.test/cap-token"])
+
     def test_openai_analyzer_requests_structured_json_output(self) -> None:
         analyzer = OpenAIInfoAnalyzer(model="gpt-5-mini")
         payload = analyzer._request_payload(
@@ -768,6 +809,9 @@ class IntelligenceTests(unittest.TestCase):
         self.assertEqual(market_scores_schema["items"]["required"], ["market", "score"])
         self.assertEqual(payload["reasoning"]["effort"], "low")
         self.assertGreaterEqual(payload["max_output_tokens"], 2000)
+        developer_prompt = payload["input"][0]["content"]
+        self.assertIn("ambiguous ticker/name matches", developer_prompt)
+        self.assertIn("Global risk must only reflect crypto-market news", developer_prompt)
 
     def test_openai_analyzer_uses_env_timeout(self) -> None:
         original_timeout = os.environ.get("OPENAI_TIMEOUT_SECONDS")

@@ -619,7 +619,7 @@ class AutoTraderTests(unittest.TestCase):
 
         self.assertIsNone(auto.sell_reason(position, candidate, AutoConfig()))
 
-    def test_rotation_can_sell_profitable_position(self) -> None:
+    def test_rotation_does_not_sell_at_one_percent_profit_by_default(self) -> None:
         auto = AutoTrader(self.settings())
         position = Position(
             market="KRW-OLD",
@@ -645,10 +645,74 @@ class AutoTraderTests(unittest.TestCase):
             reasons=[],
         )
 
+        self.assertIsNone(auto.sell_reason(position, candidate, AutoConfig()))
+
+    def test_rotation_can_sell_after_minimum_profit(self) -> None:
+        auto = AutoTrader(self.settings())
+        position = Position(
+            market="KRW-OLD",
+            currency="OLD",
+            balance=Decimal("1"),
+            avg_buy_price=Decimal("100"),
+            current_price=Decimal("106"),
+            value_krw=Decimal("106000"),
+            momentum_score=Decimal("1000"),
+            info_score=Decimal("0"),
+            peak_price=Decimal("106"),
+            trailing_stop_price=Decimal("105"),
+            pnl_rate=Decimal("0.06"),
+        )
+        candidate = Candidate(
+            market="KRW-NEW",
+            score=Decimal("5000"),
+            market_score=Decimal("5000"),
+            info_score=Decimal("0"),
+            change_rate=Decimal("0.05"),
+            volume_24h=Decimal("100000"),
+            trade_price=Decimal("10"),
+            reasons=[],
+        )
+
         self.assertEqual(
             auto.sell_reason(position, candidate, AutoConfig()),
             "rotate_to_stronger_candidate",
         )
+
+    def test_negative_information_does_not_sell_before_minimum_profit(self) -> None:
+        auto = AutoTrader(self.settings())
+        position = Position(
+            market="KRW-BTC",
+            currency="BTC",
+            balance=Decimal("1"),
+            avg_buy_price=Decimal("100"),
+            current_price=Decimal("102"),
+            value_krw=Decimal("102000"),
+            momentum_score=Decimal("1000"),
+            info_score=Decimal("-1"),
+            peak_price=Decimal("102"),
+            trailing_stop_price=None,
+            pnl_rate=Decimal("0.02"),
+        )
+
+        self.assertIsNone(auto.sell_reason(position, None, AutoConfig()))
+
+    def test_default_stop_loss_sells_at_six_percent_loss(self) -> None:
+        auto = AutoTrader(self.settings())
+        position = Position(
+            market="KRW-BTC",
+            currency="BTC",
+            balance=Decimal("1"),
+            avg_buy_price=Decimal("100"),
+            current_price=Decimal("94"),
+            value_krw=Decimal("94000"),
+            momentum_score=Decimal("1000"),
+            info_score=Decimal("0"),
+            peak_price=Decimal("100"),
+            trailing_stop_price=None,
+            pnl_rate=Decimal("-0.06"),
+        )
+
+        self.assertEqual(auto.sell_reason(position, None, AutoConfig()), "stop_loss")
 
     def test_position_monitor_sells_on_price_stop_loss_between_cycles(self) -> None:
         settings = self.settings()
@@ -689,7 +753,29 @@ class AutoTraderTests(unittest.TestCase):
         )
         updated = auto.apply_position_state([position], AutoConfig())[0]
         self.assertEqual(updated.peak_price, Decimal("120"))
-        self.assertEqual(updated.trailing_stop_price, Decimal("115.20"))
+        self.assertEqual(updated.trailing_stop_price, Decimal("112.80"))
+
+    def test_trailing_stop_remains_armed_after_price_falls_below_five_percent(self) -> None:
+        auto = AutoTrader(self.settings())
+        auto._position_state = {"KRW-BTC": {"avg_buy_price": "100", "peak_price": "110"}}
+        position = Position(
+            market="KRW-BTC",
+            currency="BTC",
+            balance=Decimal("1"),
+            avg_buy_price=Decimal("100"),
+            current_price=Decimal("104"),
+            value_krw=Decimal("104000"),
+            momentum_score=Decimal("1000"),
+            info_score=Decimal("0"),
+            peak_price=Decimal("104"),
+            trailing_stop_price=None,
+            pnl_rate=Decimal("0.04"),
+        )
+
+        updated = auto.apply_position_state([position], AutoConfig())[0]
+
+        self.assertEqual(updated.trailing_stop_price, Decimal("105.60"))
+        self.assertEqual(auto.price_sell_reason(updated, AutoConfig()), "trailing_take_profit")
 
 
 class IntelligenceTests(unittest.TestCase):

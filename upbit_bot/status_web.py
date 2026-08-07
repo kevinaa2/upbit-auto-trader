@@ -145,7 +145,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--log-file", default=str(DEFAULT_LOG_FILE))
     parser.add_argument("--state-file", default=str(DEFAULT_STATE_FILE))
     parser.add_argument("--stop-file", default=str(DEFAULT_STOP_FILE))
-    parser.add_argument("--stale-after-seconds", type=int, default=900)
+    parser.add_argument("--stale-after-seconds", type=int, default=32400)
     parser.add_argument("--recent-limit", type=int, default=25)
     return parser
 

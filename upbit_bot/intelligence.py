@@ -506,7 +506,7 @@ class OpenAIInfoAnalyzer:
                 "source": item.source,
                 "published": item.published,
             }
-            for item in articles[:50]
+            for item in articles[:200]
         ]
         prompt = {
             "markets": compact_markets,

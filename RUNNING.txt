@@ -50,9 +50,9 @@ Run one dry-run auto cycle:
 
   python -m upbit_bot run-auto --once --cash-usage-percent 50
 
-Run a continuous dry-run loop every 10 minutes:
+Run a continuous dry-run loop with the default 8-hour AI cycle:
 
-  python -m upbit_bot run-auto --interval-seconds 600 --cash-usage-percent 50
+  python -m upbit_bot run-auto --cash-usage-percent 50
 
 The default strategy skips coins above +12% 24h change unless matched news or AI
 information is strongly positive. To adjust that:
@@ -70,25 +70,26 @@ but does not block buys by itself. To make that stricter or looser:
 
   python -m upbit_bot run-auto --min-info-score-for-buy 0.2
 
-Before final selection, the bot does a second news search for the strongest
-momentum candidates. By default it checks 5 candidates and up to 5 extra articles
-per candidate:
+Before final selection, the bot analyzes up to 200 broad articles and then does a
+second news search for the strongest momentum candidates. By default it checks 10
+candidates and up to 10 extra articles per candidate:
 
-  python -m upbit_bot run-auto --candidate-news-markets 5 --candidate-news-articles-per-market 5
+  python -m upbit_bot run-auto --info-article-limit 200 --candidate-news-markets 10 --candidate-news-articles-per-market 10
 
-Sell defaults are intentionally less jumpy:
+Sell defaults favor longer holds:
 
-  stop-loss: -5%
-  rotation to a stronger candidate: only when current PnL is at least 0%
-  held-position price check: every 30 seconds between full AI cycles
+  stop-loss: -6%
+  no information/rotation/profit exit before +5%
+  adaptive trailing exit after the observed peak first reaches +5%
+  held-position price check: every 10 seconds between 8-hour AI cycles
 
 To adjust:
 
-  python -m upbit_bot run-auto --stop-loss-rate -0.05 --rotation-min-pnl-rate 0 --position-check-seconds 30
+  python -m upbit_bot run-auto --stop-loss-rate -0.06 --min-profit-exit-rate 0.05 --trailing-start-rate 0.05 --rotation-min-pnl-rate 0.05 --position-check-seconds 10
 
 Run live auto trading with OpenAI news analysis:
 
-  python -m upbit_bot run-auto --live --yes --allow-full-balance --cash-usage-percent 100 --interval-seconds 600 --position-check-seconds 30 --use-openai-info --stop-loss-rate -0.05 --rotation-min-pnl-rate 0
+  python -m upbit_bot run-auto --live --yes --allow-full-balance --cash-usage-percent 100 --interval-seconds 28800 --position-check-seconds 10 --use-openai-info --info-article-limit 200 --candidate-news-markets 10 --candidate-news-articles-per-market 10 --stop-loss-rate -0.06 --min-profit-exit-rate 0.05 --trailing-start-rate 0.05 --rotation-min-pnl-rate 0.05
 
 Live auto trading also requires these .env values:
 
@@ -121,13 +122,13 @@ Dry-run auto cycle Parameters:
 
   run-auto --once --cash-usage-percent 50
 
-Continuous 10-minute dry-run Parameters:
+Continuous 8-hour dry-run Parameters:
 
-  run-auto --interval-seconds 600 --cash-usage-percent 50
+  run-auto --interval-seconds 28800 --cash-usage-percent 50
 
 Live auto trading Parameters:
 
-  run-auto --live --yes --allow-full-balance --cash-usage-percent 100 --interval-seconds 600 --position-check-seconds 30 --use-openai-info --min-info-score-for-buy 0 --stop-loss-rate -0.05 --rotation-min-pnl-rate 0
+  run-auto --live --yes --allow-full-balance --cash-usage-percent 100 --interval-seconds 28800 --position-check-seconds 10 --use-openai-info --info-article-limit 200 --candidate-news-markets 10 --candidate-news-articles-per-market 10 --min-info-score-for-buy 0 --stop-loss-rate -0.06 --min-profit-exit-rate 0.05 --trailing-start-rate 0.05 --rotation-min-pnl-rate 0.05
 
 
 4. Run the status web

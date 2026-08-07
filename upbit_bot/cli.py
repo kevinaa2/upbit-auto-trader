@@ -50,32 +50,33 @@ def build_parser() -> argparse.ArgumentParser:
     auto = subparsers.add_parser("run-auto", help="Run autonomous KRW-market trading loop.")
     _add_order_flags(auto)
     auto.add_argument("--quote", default="KRW")
-    auto.add_argument("--interval-seconds", type=int, default=60)
-    auto.add_argument("--position-check-seconds", type=int, default=30)
+    auto.add_argument("--interval-seconds", type=int, default=28800)
+    auto.add_argument("--position-check-seconds", type=int, default=10)
     auto.add_argument("--cash-usage-percent", default="100")
     auto.add_argument("--min-change-rate", default="0.005")
     auto.add_argument("--max-change-rate", default="0.12")
     auto.add_argument("--overheat-info-threshold", default="0.50")
     auto.add_argument("--min-24h-volume", default="1000000000")
-    auto.add_argument("--stop-loss-rate", default="-0.05")
+    auto.add_argument("--stop-loss-rate", default="-0.06")
+    auto.add_argument("--min-profit-exit-rate", default="0.05")
     auto.add_argument("--take-profit-rate", default="0")
-    auto.add_argument("--trailing-start-rate", default="0.04")
+    auto.add_argument("--trailing-start-rate", default="0.05")
     auto.add_argument("--trailing-stop-rate-1", default="0.03")
     auto.add_argument("--trailing-stop-rate-2", default="0.04")
     auto.add_argument("--trailing-stop-rate-3", default="0.06")
     auto.add_argument("--trailing-tier-2-rate", default="0.08")
     auto.add_argument("--trailing-tier-3-rate", default="0.15")
     auto.add_argument("--rotation-margin-rate", default="0.01")
-    auto.add_argument("--rotation-min-pnl-rate", default="0")
+    auto.add_argument("--rotation-min-pnl-rate", default="0.05")
     auto.add_argument("--fee-buffer-rate", default="0.001")
     auto.add_argument("--no-info", action="store_true", help="Disable external news/RSS information scoring.")
     auto.add_argument("--use-openai-info", action="store_true", help="Use OpenAI API to analyze collected news.")
     auto.add_argument("--info-weight", default="0.25")
     auto.add_argument("--info-sell-threshold", default="-0.70")
     auto.add_argument("--global-risk-block-threshold", default="-0.80")
-    auto.add_argument("--info-article-limit", type=int, default=80)
-    auto.add_argument("--candidate-news-markets", type=int, default=5)
-    auto.add_argument("--candidate-news-articles-per-market", type=int, default=5)
+    auto.add_argument("--info-article-limit", type=int, default=200)
+    auto.add_argument("--candidate-news-markets", type=int, default=10)
+    auto.add_argument("--candidate-news-articles-per-market", type=int, default=10)
     auto.add_argument("--min-info-articles-for-buy", type=int, default=1)
     auto.add_argument("--min-info-score-for-buy", default="0")
     auto.add_argument("--include-warnings", action="store_true")
@@ -100,7 +101,7 @@ def build_parser() -> argparse.ArgumentParser:
     status_web.add_argument("--log-file", default="upbit_auto_trader.jsonl")
     status_web.add_argument("--state-file", default=".upbit_auto_state.json")
     status_web.add_argument("--stop-file", default=".upbit_bot_stop")
-    status_web.add_argument("--stale-after-seconds", type=int, default=900)
+    status_web.add_argument("--stale-after-seconds", type=int, default=32400)
     status_web.add_argument("--recent-limit", type=int, default=25)
 
     return parser
@@ -152,6 +153,7 @@ def _dispatch(args: argparse.Namespace, trader: Trader) -> UpbitResponse | Order
             overheat_info_threshold=Decimal(args.overheat_info_threshold),
             min_24h_volume=Decimal(args.min_24h_volume),
             stop_loss_rate=Decimal(args.stop_loss_rate),
+            min_profit_exit_rate=Decimal(args.min_profit_exit_rate),
             take_profit_rate=Decimal(args.take_profit_rate),
             trailing_start_rate=Decimal(args.trailing_start_rate),
             trailing_stop_rate_1=Decimal(args.trailing_stop_rate_1),

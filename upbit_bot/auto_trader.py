@@ -20,32 +20,33 @@ from .upbit_client import UpbitApiError, UpbitResponse
 @dataclass(frozen=True)
 class AutoConfig:
     quote: str = "KRW"
-    interval_seconds: int = 60
-    position_check_seconds: int = 30
+    interval_seconds: int = 28800
+    position_check_seconds: int = 10
     cash_usage_percent: Decimal = Decimal("100")
     min_change_rate: Decimal = Decimal("0.005")
     max_change_rate: Decimal = Decimal("0.12")
     overheat_info_threshold: Decimal = Decimal("0.50")
     min_24h_volume: Decimal = Decimal("1000000000")
-    stop_loss_rate: Decimal = Decimal("-0.05")
+    stop_loss_rate: Decimal = Decimal("-0.06")
+    min_profit_exit_rate: Decimal = Decimal("0.05")
     take_profit_rate: Decimal = Decimal("0")
-    trailing_start_rate: Decimal = Decimal("0.04")
+    trailing_start_rate: Decimal = Decimal("0.05")
     trailing_stop_rate_1: Decimal = Decimal("0.03")
     trailing_stop_rate_2: Decimal = Decimal("0.04")
     trailing_stop_rate_3: Decimal = Decimal("0.06")
     trailing_tier_2_rate: Decimal = Decimal("0.08")
     trailing_tier_3_rate: Decimal = Decimal("0.15")
     rotation_margin_rate: Decimal = Decimal("0.01")
-    rotation_min_pnl_rate: Decimal = Decimal("0")
+    rotation_min_pnl_rate: Decimal = Decimal("0.05")
     fee_buffer_rate: Decimal = Decimal("0.001")
     use_info: bool = True
     use_openai_info: bool = False
     info_weight: Decimal = Decimal("0.25")
     info_sell_threshold: Decimal = Decimal("-0.70")
     global_risk_block_threshold: Decimal = Decimal("-0.80")
-    info_article_limit: int = 80
-    candidate_news_markets: int = 5
-    candidate_news_articles_per_market: int = 5
+    info_article_limit: int = 200
+    candidate_news_markets: int = 10
+    candidate_news_articles_per_market: int = 10
     min_info_articles_for_buy: int = 1
     min_info_score_for_buy: Decimal = Decimal("0")
     include_warnings: bool = False
@@ -370,9 +371,16 @@ class AutoTrader:
 
             peak_price = max(stored_peak, position.current_price, position.avg_buy_price)
             trailing_stop_price = None
-            if position.pnl_rate is not None and position.pnl_rate >= config.trailing_start_rate:
-                stop_rate = self.trailing_stop_rate(position.pnl_rate, config)
+            peak_pnl_rate = None
+            if position.avg_buy_price > 0:
+                peak_pnl_rate = (peak_price / position.avg_buy_price) - Decimal("1")
+            if peak_pnl_rate is not None and peak_pnl_rate >= config.trailing_start_rate:
+                stop_rate = self.trailing_stop_rate(peak_pnl_rate, config)
                 trailing_stop_price = peak_price * (Decimal("1") - stop_rate)
+                profit_floor = position.avg_buy_price * (
+                    Decimal("1") + config.min_profit_exit_rate
+                )
+                trailing_stop_price = max(trailing_stop_price, profit_floor)
 
             self._position_state[position.market] = {
                 "avg_buy_price": str(position.avg_buy_price),
@@ -404,15 +412,16 @@ class AutoTrader:
     ) -> str | None:
         if position.value_krw < self.settings.min_order_krw:
             return None
-        if position.info_score <= config.info_sell_threshold:
-            return "negative_external_info"
         if position.pnl_rate is not None and position.pnl_rate <= config.stop_loss_rate:
             return "stop_loss"
         if self.trailing_stop_hit(position, config):
             return "trailing_take_profit"
+        if position.pnl_rate is None or position.pnl_rate < config.min_profit_exit_rate:
+            return None
+        if position.info_score <= config.info_sell_threshold:
+            return "negative_external_info"
         if (
             config.take_profit_rate > 0
-            and position.pnl_rate is not None
             and position.pnl_rate >= config.take_profit_rate
         ):
             return "take_profit"
@@ -450,11 +459,9 @@ class AutoTrader:
         return None
 
     def trailing_stop_hit(self, position: Position, config: AutoConfig) -> bool:
-        if position.pnl_rate is None or position.pnl_rate < config.trailing_start_rate:
-            return False
         if position.trailing_stop_price is None:
             return False
-        return position.current_price <= position.trailing_stop_price
+        return position.current_price < position.trailing_stop_price
 
     def trailing_stop_rate(self, pnl_rate: Decimal, config: AutoConfig) -> Decimal:
         if pnl_rate >= config.trailing_tier_3_rate:
@@ -497,9 +504,10 @@ class AutoTrader:
             return "stop_loss"
         if self.trailing_stop_hit(position, config):
             return "trailing_take_profit"
+        if position.pnl_rate is None or position.pnl_rate < config.min_profit_exit_rate:
+            return None
         if (
             config.take_profit_rate > 0
-            and position.pnl_rate is not None
             and position.pnl_rate >= config.take_profit_rate
         ):
             return "take_profit"
@@ -588,10 +596,14 @@ class AutoTrader:
             raise ValueError("--min-info-score-for-buy must be between -1 and 1")
         if config.rotation_min_pnl_rate < -1 or config.rotation_min_pnl_rate > 1:
             raise ValueError("--rotation-min-pnl-rate must be between -1 and 1")
+        if config.min_profit_exit_rate < 0 or config.min_profit_exit_rate > 1:
+            raise ValueError("--min-profit-exit-rate must be between 0 and 1")
         if config.alert_heartbeat_cycles < 0:
             raise ValueError("--alert-heartbeat-cycles must be 0 or greater")
         if config.trailing_start_rate < 0:
             raise ValueError("--trailing-start-rate must be 0 or greater")
+        if config.trailing_start_rate < config.min_profit_exit_rate:
+            raise ValueError("--trailing-start-rate must be >= --min-profit-exit-rate")
         for name, value in {
             "--trailing-stop-rate-1": config.trailing_stop_rate_1,
             "--trailing-stop-rate-2": config.trailing_stop_rate_2,

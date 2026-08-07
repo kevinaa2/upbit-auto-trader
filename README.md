@@ -188,13 +188,14 @@ Auto trader defaults:
 - Collects crypto news from RSS feeds and adjusts candidate scores with external information.
 - Blocks new buys when information collection has errors or fewer than `--min-info-articles-for-buy 1` articles.
 - Blocks new buys when the top candidate's direct market information score is below `--min-info-score-for-buy 0`.
-- Rechecks the top `--candidate-news-markets 5` momentum candidates with up to `--candidate-news-articles-per-market 5` extra candidate-specific news articles before final selection.
+- Runs a full information and AI cycle every `--interval-seconds 28800` (8 hours) by default.
+- Analyzes up to `--info-article-limit 200` broad articles, then rechecks the top `--candidate-news-markets 10` momentum candidates with up to `--candidate-news-articles-per-market 10` candidate-specific articles before final selection.
 - Can optionally call the OpenAI Responses API when `--use-openai-info` and `OPENAI_API_KEY` are set.
-- Sells on `--stop-loss-rate -0.05`, trailing take-profit, optional `--take-profit-rate`, or rotation to a stronger candidate.
-- Checks held positions every `--position-check-seconds 30` between full AI cycles for price-only stop-loss, take-profit, and trailing-stop exits.
-- Rotation to a stronger candidate is only allowed when current PnL is at least `--rotation-min-pnl-rate 0` by default.
+- Sells immediately at `--stop-loss-rate -0.06`; other exits are blocked until the position reaches `--min-profit-exit-rate 0.05`.
+- Checks held positions every `--position-check-seconds 10` between full AI cycles without calling OpenAI.
+- Rotation to a stronger candidate is only allowed when current PnL is at least `--rotation-min-pnl-rate 0.05` by default.
 - Refreshes balances after a live sell, so a replacement buy can happen in the same cycle when cash is available.
-- Sells when strong negative external information is detected for the held market.
+- Strong negative information can sell a held market only after the minimum profit exit threshold is reached; the -6% hard stop remains the pre-profit exception.
 - Blocks new buys when global crypto news risk is too negative.
 - Writes JSONL logs to `upbit_auto_trader.jsonl`.
 - Stores position peak-price state in `.upbit_auto_state.json`.
@@ -204,11 +205,12 @@ Auto trader defaults:
 Trailing take-profit defaults:
 
 - Fixed take-profit is disabled by default with `--take-profit-rate 0`.
-- Fixed stop-loss is `--stop-loss-rate -0.05`, meaning roughly -5% from average buy price.
-- Rotation sells are disabled while the current position is losing unless `--rotation-min-pnl-rate` is lowered.
-- Held-position price checks run every `--position-check-seconds 30`; set it to `0` to disable between-cycle monitoring.
-- Trailing starts after `--trailing-start-rate 0.04`, meaning roughly +4% profit.
-- From +4% to +8%, sell if price falls 3% from the observed peak.
+- Fixed stop-loss is `--stop-loss-rate -0.06`, meaning roughly -6% from average buy price.
+- Information, fixed-profit, and rotation exits are blocked below `--min-profit-exit-rate 0.05`.
+- Held-position price checks run every `--position-check-seconds 10`; set it to `0` to disable between-cycle monitoring.
+- Trailing starts after the observed peak reaches `--trailing-start-rate 0.05`, meaning roughly +5% profit.
+- The trailing floor never moves below the +5% target after it is armed, although market-order slippage can produce a lower actual fill.
+- From +5% to +8%, sell if price falls 3% from the observed peak.
 - From +8% to +15%, sell if price falls 4% from the observed peak.
 - Above +15%, sell if price falls 6% from the observed peak.
 - The peak is persisted in `.upbit_auto_state.json`, so restarting the bot does not forget the latest observed high.
@@ -216,7 +218,7 @@ Trailing take-profit defaults:
 Example:
 
 ```powershell
-python -m upbit_bot run-auto --trailing-start-rate 0.04 --trailing-stop-rate-1 0.03 --trailing-stop-rate-2 0.04 --trailing-stop-rate-3 0.06
+python -m upbit_bot run-auto --interval-seconds 28800 --position-check-seconds 10 --stop-loss-rate -0.06 --min-profit-exit-rate 0.05 --trailing-start-rate 0.05
 ```
 
 Information scoring:

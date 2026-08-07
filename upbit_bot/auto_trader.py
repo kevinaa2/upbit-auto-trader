@@ -21,6 +21,7 @@ from .upbit_client import UpbitApiError, UpbitResponse
 class AutoConfig:
     quote: str = "KRW"
     interval_seconds: int = 60
+    position_check_seconds: int = 30
     cash_usage_percent: Decimal = Decimal("100")
     min_change_rate: Decimal = Decimal("0.005")
     max_change_rate: Decimal = Decimal("0.12")
@@ -129,7 +130,7 @@ class AutoTrader:
             if config.once:
                 self._notify("stopped", "Auto trader finished one cycle", "info", {"reason": "once"})
                 return
-            self._sleep(config.interval_seconds, config.stop_file)
+            self._wait_between_cycles(config)
         self._log(config, "stopped", {"reason": "signal"})
         self._notify("stopped", "Auto trader stopped", "info", {"reason": "signal"})
 
@@ -204,6 +205,40 @@ class AutoTrader:
             "candidate": self._candidate_dict(candidate),
             "info": self._info_dict(info_signal),
             "cash": str(cash),
+            "positions": [self._position_dict(position) for position in positions],
+            "actions": actions,
+        }
+
+    def monitor_positions_once(self, config: AutoConfig) -> dict[str, Any]:
+        balances = self.trader.balances().data
+        held_markets = self.held_markets(balances, config.quote)
+        tickers = self._load_tickers(held_markets) if held_markets else []
+        ticker_by_market = {item["market"]: item for item in tickers}
+        positions = self.positions(balances, ticker_by_market, config.quote, InfoSignal())
+        positions = self.apply_position_state(positions, config)
+
+        actions: list[dict[str, Any]] = []
+        for position in positions:
+            sell_reason = self.price_sell_reason(position, config)
+            if sell_reason:
+                result = self.trader.market_sell(
+                    position.market,
+                    str(position.balance),
+                    live=config.live,
+                    yes=config.yes,
+                )
+                actions.append(self._action("sell", position.market, sell_reason, result))
+
+        if any(action.get("type") == "sell" and not action.get("dry_run") for action in actions):
+            balances = self.trader.balances().data
+            held_markets = self.held_markets(balances, config.quote)
+            tickers = self._load_tickers(held_markets) if held_markets else []
+            ticker_by_market = {item["market"]: item for item in tickers}
+            positions = self.positions(balances, ticker_by_market, config.quote, InfoSignal())
+            positions = self.apply_position_state(positions, config)
+
+        self._save_state(config.state_file)
+        return {
             "positions": [self._position_dict(position) for position in positions],
             "actions": actions,
         }
@@ -443,6 +478,33 @@ class AutoTrader:
                 return self._decimal(item.get("balance", "0"))
         return Decimal("0")
 
+    def held_markets(self, balances: list[dict[str, Any]], quote: str) -> list[str]:
+        quote = quote.upper()
+        markets: list[str] = []
+        for item in balances:
+            currency = str(item.get("currency", "")).upper()
+            if not currency or currency == quote:
+                continue
+            balance = self._decimal(item.get("balance", "0"))
+            if balance > 0:
+                markets.append(f"{quote}-{currency}")
+        return markets
+
+    def price_sell_reason(self, position: Position, config: AutoConfig) -> str | None:
+        if position.value_krw < self.settings.min_order_krw:
+            return None
+        if position.pnl_rate is not None and position.pnl_rate <= config.stop_loss_rate:
+            return "stop_loss"
+        if self.trailing_stop_hit(position, config):
+            return "trailing_take_profit"
+        if (
+            config.take_profit_rate > 0
+            and position.pnl_rate is not None
+            and position.pnl_rate >= config.take_profit_rate
+        ):
+            return "take_profit"
+        return None
+
     def _load_tickers(self, markets: list[str]) -> list[dict[str, Any]]:
         tickers: list[dict[str, Any]] = []
         for start in range(0, len(markets), 80):
@@ -512,6 +574,8 @@ class AutoTrader:
                 )
         if config.interval_seconds < 5:
             raise ValueError("--interval-seconds must be at least 5")
+        if config.position_check_seconds < 0:
+            raise ValueError("--position-check-seconds must be 0 or greater")
         if config.info_article_limit < 1:
             raise ValueError("--info-article-limit must be at least 1")
         if config.candidate_news_markets < 0:
@@ -546,6 +610,34 @@ class AutoTrader:
             if stop_file.exists():
                 return
             time.sleep(min(1.0, end - time.time()))
+
+    def _wait_between_cycles(self, config: AutoConfig) -> None:
+        if config.position_check_seconds <= 0:
+            self._sleep(config.interval_seconds, config.stop_file)
+            return
+
+        end = time.time() + config.interval_seconds
+        while self._running and time.time() < end:
+            if config.stop_file.exists():
+                return
+            wait_seconds = min(config.position_check_seconds, max(0, end - time.time()))
+            self._sleep(wait_seconds, config.stop_file)
+            if config.stop_file.exists() or not self._running or time.time() >= end:
+                return
+            try:
+                summary = self.monitor_positions_once(config)
+                actions = summary.get("actions", [])
+                if actions:
+                    self._log(config, "position_check", summary)
+                    self._notify(
+                        "position_check_action",
+                        "Position monitor action executed" if config.live else "Position monitor action planned",
+                        "warning" if config.live else "info",
+                        summary,
+                    )
+            except (RuntimeError, ValueError, UpbitApiError) as exc:
+                self._log(config, "error", {"error": f"position monitor failed: {exc}"})
+                self._notify("error", "Position monitor error", "error", {"error": str(exc)})
 
     def _install_signal_handlers(self) -> None:
         def handle_stop(signum: int, frame: Any) -> None:

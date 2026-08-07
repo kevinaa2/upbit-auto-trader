@@ -454,6 +454,10 @@ def _event_detail(item: dict[str, Any]) -> str:
         candidate = item.get("candidate") or {}
         actions = item.get("actions") or []
         return f"candidate={candidate.get('market', '-')} actions={len(actions)} cash={item.get('cash', '-')}"
+    if item.get("event") == "position_check":
+        actions = item.get("actions") or []
+        markets = ", ".join(str(action.get("market", "-")) for action in actions)
+        return f"actions={len(actions)} markets={markets or '-'}"
     if item.get("event") == "started":
         return f"live={item.get('live')} once={item.get('once')}"
     if item.get("event") == "stopped":

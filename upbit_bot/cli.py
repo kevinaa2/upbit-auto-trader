@@ -51,6 +51,7 @@ def build_parser() -> argparse.ArgumentParser:
     _add_order_flags(auto)
     auto.add_argument("--quote", default="KRW")
     auto.add_argument("--interval-seconds", type=int, default=60)
+    auto.add_argument("--position-check-seconds", type=int, default=30)
     auto.add_argument("--cash-usage-percent", default="100")
     auto.add_argument("--min-change-rate", default="0.005")
     auto.add_argument("--max-change-rate", default="0.12")
@@ -144,6 +145,7 @@ def _dispatch(args: argparse.Namespace, trader: Trader) -> UpbitResponse | Order
         config = AutoConfig(
             quote=args.quote,
             interval_seconds=args.interval_seconds,
+            position_check_seconds=args.position_check_seconds,
             cash_usage_percent=Decimal(args.cash_usage_percent),
             min_change_rate=Decimal(args.min_change_rate),
             max_change_rate=Decimal(args.max_change_rate),

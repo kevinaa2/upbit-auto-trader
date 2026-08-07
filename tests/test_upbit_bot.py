@@ -149,6 +149,40 @@ class FakeCandidateApi:
         return UpbitResponse({"uuid": "buy-uuid"}, 201, None)
 
 
+class FakePositionMonitorApi:
+    def __init__(self, settings: Settings) -> None:
+        self.settings = settings
+        self.sell_orders: list[tuple[str, str, bool, bool]] = []
+
+    def balances(self) -> UpbitResponse:
+        return UpbitResponse(
+            [
+                {"currency": "KRW", "balance": "0"},
+                {"currency": "HOLD", "balance": "100", "avg_buy_price": "100"},
+            ],
+            200,
+            None,
+        )
+
+    def tickers(self, markets: list[str]) -> UpbitResponse:
+        return UpbitResponse(
+            [
+                {
+                    "market": "KRW-HOLD",
+                    "signed_change_rate": "-0.06",
+                    "acc_trade_price_24h": "1000000",
+                    "trade_price": "94",
+                }
+            ],
+            200,
+            None,
+        )
+
+    def market_sell(self, market: str, volume: str, live: bool, yes: bool) -> UpbitResponse:
+        self.sell_orders.append((market, volume, live, yes))
+        return UpbitResponse({"uuid": "sell-uuid"}, 201, None)
+
+
 class UpbitClientTests(unittest.TestCase):
     def test_jwt_contains_three_segments(self) -> None:
         client = UpbitClient("access", "secret")
@@ -609,6 +643,27 @@ class AutoTraderTests(unittest.TestCase):
             auto.sell_reason(position, candidate, AutoConfig()),
             "rotate_to_stronger_candidate",
         )
+
+    def test_position_monitor_sells_on_price_stop_loss_between_cycles(self) -> None:
+        settings = self.settings()
+        fake_trader = FakePositionMonitorApi(settings)
+        auto = AutoTrader(settings, fake_trader)  # type: ignore[arg-type]
+
+        summary = auto.monitor_positions_once(
+            AutoConfig(
+                live=True,
+                yes=True,
+                stop_loss_rate=Decimal("-0.05"),
+                state_file=Path("test-position-monitor-state.json"),
+            )
+        )
+
+        try:
+            self.assertEqual(fake_trader.sell_orders[0], ("KRW-HOLD", "100", True, True))
+            self.assertEqual(summary["actions"][0]["reason"], "stop_loss")
+        finally:
+            Path("test-position-monitor-state.json").unlink(missing_ok=True)
+            Path("test-position-monitor-state.json.tmp").unlink(missing_ok=True)
 
     def test_apply_position_state_keeps_highest_observed_price(self) -> None:
         auto = AutoTrader(self.settings())
